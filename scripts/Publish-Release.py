@@ -38,7 +38,8 @@ if not published:
         note_args=['--notes-file',str(notes)] if notes.exists() else ['--generate-notes']
         gh('release','create',args.tag,'--repo',repository,'--verify-tag','--draft','--title',f'NoiseBase {version}',*note_args)
     gh('release','upload',args.tag,'--repo',repository,'--clobber',*[str(folder/name) for name in names])
-release=json.loads(gh('api',f'repos/{repository}/releases/tags/{args.tag}').stdout)
+pages=json.loads(gh('api',f'repos/{repository}/releases','--paginate','--slurp').stdout)
+release=next(release for page in pages for release in page if release['tag_name']==args.tag)
 actual={asset['name']:asset for asset in release['assets']}
 assert set(actual)==set(expected),'Unexpected or missing release assets.'
 for name,metadata in expected.items():

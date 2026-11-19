@@ -43,6 +43,8 @@ Downloads must match GitHub's SHA-256 asset digest, `SHA256SUMS.txt`, and every 
 
 To release a new version, update the CMake project version and release notes, commit, then push the corresponding `vMAJOR.MINOR.PATCH` tag. Manual workflow runs build and verify without publishing.
 
+If publishing fails after a successful build, use **Resume verified release publication** with the original workflow run ID and stable tag. It verifies that the successful build belongs to that exact tag commit and repository, retrieves its artifact, and retries upload/digest verification without rebuilding. Published releases are left unchanged unless the existing assets exactly match the checksums.
+
 ## Build from source
 
 This repository includes the JUCE source, Silero model, generated artwork, and ONNX Runtime CPU headers/runtime required by the current build. No submodule initialization or dependency download is required. Three unused JUCE Android demo Firebase configuration files are omitted; see the [vendor notes](third_party/NOISEBASE-VENDOR-NOTES.md).
