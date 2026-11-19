@@ -72,6 +72,16 @@ function Expand-VerifiedArchive([string]$Archive, [string]$Destination) {
         [IO.Compression.ZipFile]::ExtractToDirectory($Archive, $Destination)
     } finally { $zip.Dispose() }
 }
+function Get-ReleaseChecksum([object]$Content, [string]$Name, [string]$Digest) {
+    if ($Content.Length -gt 65536) { throw 'Checksum manifest is too large.' }
+    if ($Content -is [byte[]]) { $text=[Text.Encoding]::UTF8.GetString($Content) } else {$text=[string]$Content}
+    $text=$text.TrimStart([char]0xFEFF)
+    $matching=@($text -split '\r?\n' | Where-Object {$_ -match ('^[0-9a-fA-F]{64}\s+\*?'+[regex]::Escape($Name)+'$')})
+    if ($matching.Count -ne 1) { throw 'Release checksum is missing or ambiguous.' }
+    $expected=($matching[0] -split '\s+')[0].ToLowerInvariant()
+    if (('sha256:'+$expected) -cne $Digest.ToLowerInvariant()) { throw 'GitHub digest and checksum manifest disagree.' }
+    return $expected
+}
 function Get-VerifiedPackage([string]$PackageRoot) {
     $base = [IO.Path]::GetFullPath($PackageRoot)
     $manifest = Get-Content -LiteralPath (Join-Path $base 'release-manifest.json') -Raw | ConvertFrom-Json

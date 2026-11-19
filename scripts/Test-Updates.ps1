@@ -19,6 +19,11 @@ $mock.assets[0].browser_download_url='https://example.invalid/package.zip'; Expe
 $mock.assets[0].browser_download_url='https://github.com/lakam99/NoiseBase/releases/download/v1.3.0/NoiseBase-1.3.0-Windows-x64.zip'
 $mock.assets[0].digest=$null; Expect-Failure {Get-NoiseBaseRelease $mock '1.2.0'}
 Expect-Failure {Get-StableVersion '1.2.3-rc1'}
+$checksumLine=('0'*64)+'  fixture.zip'+"`n"
+Assert-True ((Get-ReleaseChecksum $checksumLine 'fixture.zip' ('sha256:'+('0'*64))) -eq ('0'*64)) 'Text checksum manifest was rejected.'
+Assert-True ((Get-ReleaseChecksum ([Text.Encoding]::UTF8.GetBytes($checksumLine)) 'fixture.zip' ('sha256:'+('0'*64))) -eq ('0'*64)) 'Windows PowerShell binary response was rejected.'
+Expect-Failure {Get-ReleaseChecksum $checksumLine 'fixture.zip' ('sha256:'+('1'*64))}
+Expect-Failure {Get-ReleaseChecksum ($checksumLine+$checksumLine) 'fixture.zip' ('sha256:'+('0'*64))}
 Expect-Failure {Assert-ChildPath (Join-Path (Split-Path -Parent $TestRoot) 'escape') $TestRoot}
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem

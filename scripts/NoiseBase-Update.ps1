@@ -16,11 +16,7 @@ try {
         $null = New-Item -ItemType Directory -Path $cache -Force
         $archive = Join-Path $cache $release.name
         $sums = Invoke-WebRequest -Uri $release.sums.browser_download_url -Headers @{'User-Agent'=$headers['User-Agent']} -UseBasicParsing -TimeoutSec 20
-        if ($sums.Content.Length -gt 65536) { throw 'Checksum manifest is too large.' }
-        $matching = @($sums.Content -split '\r?\n' | Where-Object { $_ -match ('^[0-9a-fA-F]{64}\s+\*?' + [regex]::Escape($release.name) + '$') })
-        if ($matching.Count -ne 1) { throw 'Release checksum is missing or ambiguous.' }
-        $expected = ($matching[0] -split '\s+')[0].ToLowerInvariant()
-        if (('sha256:' + $expected) -cne $release.asset.digest.ToLowerInvariant()) { throw 'GitHub digest and checksum manifest disagree.' }
+        $expected = Get-ReleaseChecksum $sums.Content $release.name $release.asset.digest
         Invoke-WebRequest -Uri $release.asset.browser_download_url -Headers @{'User-Agent'=$headers['User-Agent']} -UseBasicParsing -TimeoutSec 240 -OutFile $archive
         if ((Get-Item -LiteralPath $archive).Length -ne $release.asset.size -or (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ine $expected) { throw 'Downloaded package failed SHA-256 or size verification.' }
         $expanded = Join-Path $cache 'expanded'
