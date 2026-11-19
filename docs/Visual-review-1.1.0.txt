@@ -1,0 +1,17 @@
+NoiseBase 1.1.0 generated raster artwork review
+
+Independent visual critic inspected actual native Ivory, Graphite and Walnut
+interface renders and the loaded/processed recording state.
+
+Verdict: ready, no critical fixes. Labels and meter scales are legible; titles
+sit cleanly on the bezel; switches remain distinguishable; no obvious atlas
+bleed, sprite cropping or distracting halos; upper-left lighting is consistent.
+Loaded state: enabled controls, green lamp, filename and print-complete status
+are clear. Moving needles stay within the paper scales.
+
+Optional polish noted: darker knob caps on Ivory/Walnut and a brighter amber
+waiting lamp. These were not classified as critical.
+
+The screenshots are direct native NoiseBase component renders. Actual VST3
+module discovery, state, editor creation and audio processing were separately
+validated in a JUCE host. Studio One and physical devices were not tested.

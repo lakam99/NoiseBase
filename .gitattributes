@@ -1,0 +1,6 @@
+* text=auto
+*.png binary
+*.onnx binary
+*.dll binary
+*.wav binary
+*.mp3 binary

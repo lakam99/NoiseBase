@@ -1,0 +1,125 @@
+#include "DenoiseEngine.h"
+
+void DenoiseEngine::prepare(double sr, int channels) {
+    rate = sr; channelCount = juce::jlimit(1, 2, channels);
+    int order = juce::jlimit(8, 13, (int)std::round(std::log2(sr * .046)));
+    size = 1 << order; hop = size / 4; outputCapacity = size * 4;
+    fft = std::make_unique<juce::dsp::FFT>(order);
+    window.resize((size_t)size);
+    for (int i=0;i<size;++i) window[(size_t)i] = .5f - .5f * std::cos(juce::MathConstants<float>::twoPi * (float)i / (float)size);
+    input.assign((size_t)channelCount, std::vector<float>((size_t)size, 0));
+    output.assign((size_t)channelCount, std::vector<float>((size_t)outputCapacity, 0));
+    fftData.assign((size_t)channelCount, std::vector<float>((size_t)size * 2, 0));
+    int bins = size / 2 + 1;
+    noise.assign((size_t)bins, 1e-16f); minimum.assign((size_t)bins, 1e30f);
+    smoothedPower.assign((size_t)bins, 0); power.assign((size_t)bins, 0);
+    gain.assign((size_t)bins, 1); priorClean.assign((size_t)bins, 0);
+    priorGain.assign((size_t)bins, 1); frequencyScratch.assign((size_t)bins, 0);
+    inputPos=outputPos=0; untilFrame=hop; learnedSeconds=0; minimumAge=0; profileReady=false;
+    mixSmooth.reset(rate,.035); mixSmooth.setCurrentAndTargetValue(1);
+    outputSmooth.reset(rate,.035); outputSmooth.setCurrentAndTargetValue(1);
+    bypassSmooth.reset(rate,.025); bypassSmooth.setCurrentAndTargetValue(1);
+    meterInput=meterOutput=meterReduction=0;
+}
+
+void DenoiseEngine::resetNoise() {
+    std::fill(noise.begin(),noise.end(),1e-16f);
+    std::fill(minimum.begin(),minimum.end(),1e30f);
+    std::fill(priorClean.begin(),priorClean.end(),0);
+    learnedSeconds=0; profileReady=false; minimumAge=0;
+}
+
+bool DenoiseEngine::setProfile(const NoiseProfile& profile) {
+    if(profile.fftSize<1 || profile.sampleRate<1 || profile.power.empty()) return false;
+    double scale=(rate*size)/(profile.sampleRate*profile.fftSize);
+    for(size_t k=0;k<noise.size();++k) {
+        double index=(k*rate/size)*profile.fftSize/profile.sampleRate;
+        int a=juce::jlimit(0,(int)profile.power.size()-1,(int)index);
+        int b=std::min(a+1,(int)profile.power.size()-1);
+        float fraction=(float)juce::jlimit(0.0,1.0,index-a);
+        noise[k]=std::max(1e-16f,(profile.power[(size_t)a]+fraction*(profile.power[(size_t)b]-profile.power[(size_t)a]))*(float)scale);
+    }
+    learnedSeconds=profile.quietSeconds; profileReady=!profile.estimated; return true;
+}
+
+void DenoiseEngine::frame(float speech, float cap, float preserve, bool learn) {
+    std::fill(power.begin(),power.end(),0);
+    for(int c=0;c<channelCount;++c) {
+        auto& data=fftData[(size_t)c];
+        std::fill(data.begin(),data.end(),0);
+        for(int i=0;i<size;++i) data[(size_t)i]=input[(size_t)c][(size_t)((inputPos+i)%size)]*window[(size_t)i];
+        fft->performRealOnlyForwardTransform(data.data(),true);
+        for(int k=0;k<=size/2;++k) {
+            float p=data[(size_t)k*2]*data[(size_t)k*2]+data[(size_t)k*2+1]*data[(size_t)k*2+1];
+            power[(size_t)k]=juce::jmax(power[(size_t)k],p);
+        }
+    }
+    double arithmetic=0, logarithmic=0;
+    int first=juce::jmax(1,(int)(120*size/rate)), last=juce::jmin(size/2,(int)(4500*size/rate));
+    for(int k=first;k<=last;++k) { arithmetic+=power[(size_t)k]; logarithmic+=std::log((double)power[(size_t)k]+1e-20); }
+    // The neural detector handles tonal room noise; rejecting it by spectral
+    // flatness would prevent many real lavalier recordings from ever learning.
+    bool quiet=speech<.20f && arithmetic>1e-12;
+    float learningRate=(float)(hop/(rate*1.5));
+    for(size_t k=0;k<noise.size();++k) {
+        smoothedPower[k]=.80f*smoothedPower[k]+.20f*power[k];
+        minimum[k]=std::min(minimum[k],smoothedPower[k]);
+        if(learn && quiet) {
+            float alpha=learnedSeconds<.15 ? .35f : learningRate;
+            noise[k]=(1-alpha)*noise[k]+alpha*power[k];
+        }
+    }
+    if(learn && quiet) { learnedSeconds+=hop/rate; if(learnedSeconds>=.35) profileReady=true; }
+    if(++minimumAge>(int)(rate*2/hop)) {
+        if(learn && !profileReady) for(size_t k=0;k<noise.size();++k) noise[k]=juce::jmax(minimum[k]*1.4f,1e-16f);
+        std::copy(smoothedPower.begin(),smoothedPower.end(),minimum.begin()); minimumAge=0;
+    }
+    float actualCap=profileReady ? cap : std::min(cap,6.0f);
+    float floor=juce::Decibels::decibelsToGain(-actualCap+std::min(5.0f,actualCap*.4f)*speech*preserve);
+    for(size_t k=0;k<noise.size();++k) {
+        float posterior=power[k]/juce::jmax(noise[k],1e-16f);
+        float immediate=juce::jmax(posterior-1.0f,0.0f);
+        float prior=juce::jmax(.90f*priorClean[k]+.10f*immediate,.65f*immediate);
+        float g=juce::jlimit(floor,1.0f,prior/(1+prior));
+        priorClean[k]=posterior*g*g;
+        frequencyScratch[k]=g;
+    }
+    double averageGain=0;
+    for(size_t k=0;k<gain.size();++k) {
+        size_t a=k==0?0:k-1,b=std::min(k+1,gain.size()-1);
+        float smooth=.25f*frequencyScratch[a]+.5f*frequencyScratch[k]+.25f*frequencyScratch[b];
+        gain[k]=.28f*priorGain[k]+.72f*smooth; priorGain[k]=gain[k]; averageGain+=gain[k];
+    }
+    meterReduction=.9f*meterReduction+.1f*juce::jmax(0.0f,-juce::Decibels::gainToDecibels((float)(averageGain/gain.size()),-60.0f));
+    for(int c=0;c<channelCount;++c) {
+        auto& data=fftData[(size_t)c];
+        for(int k=0;k<=size/2;++k) { data[(size_t)k*2]*=gain[(size_t)k]; data[(size_t)k*2+1]*=gain[(size_t)k]; }
+        fft->performRealOnlyInverseTransform(data.data());
+        for(int i=0;i<size;++i) output[(size_t)c][(size_t)((outputPos+1+i)%outputCapacity)]+=data[(size_t)i]*window[(size_t)i]*(2.0f/3.0f);
+    }
+}
+
+void DenoiseEngine::process(juce::AudioBuffer<float>& buffer,float speech,float cap,float preserve,float mix,float outputDb,bool learn,bool bypass) {
+    juce::ScopedNoDenormals noDenormals;
+    mixSmooth.setTargetValue(juce::jlimit(0.0f,1.0f,mix));
+    outputSmooth.setTargetValue(bypass?1.0f:juce::Decibels::decibelsToGain(outputDb));
+    bypassSmooth.setTargetValue(bypass?0.0f:1.0f);
+    float peakIn=0,peakOut=0;
+    for(int s=0;s<buffer.getNumSamples();++s) {
+        float blend=mixSmooth.getNextValue()*bypassSmooth.getNextValue();
+        float level=outputSmooth.getNextValue();
+        for(int c=0;c<channelCount;++c) {
+            float v=buffer.getSample(c,s); peakIn=std::max(peakIn,std::abs(v));
+            float dry=input[(size_t)c][(size_t)inputPos];
+            input[(size_t)c][(size_t)inputPos]=std::isfinite(v)?v:0;
+            float wet=output[(size_t)c][(size_t)outputPos]; output[(size_t)c][(size_t)outputPos]=0;
+            float result=(dry+(wet-dry)*blend)*level;
+            buffer.setSample(c,s,result); peakOut=std::max(peakOut,std::abs(result));
+        }
+        inputPos=(inputPos+1)%size;
+        if(--untilFrame==0) { frame(speech,cap,preserve,learn); untilFrame=hop; }
+        outputPos=(outputPos+1)%outputCapacity;
+    }
+    float decay=(float)std::exp(-buffer.getNumSamples()/(rate*.25));
+    meterInput=std::max(peakIn,meterInput*decay); meterOutput=std::max(peakOut,meterOutput*decay);
+}

@@ -1,0 +1,34 @@
+NOISEBASE SOURCE
+
+Requires Windows x64, Visual Studio 2022 C++ Build Tools with Windows SDK,
+CMake 3.22 or newer, and C++20 support. JUCE source, the VAD model, and the
+ONNX Runtime CPU headers/runtime needed by this build are included.
+Three unused JUCE Android Firebase demo configurations are intentionally omitted;
+see third_party/NOISEBASE-VENDOR-NOTES.md. Windows targets are unaffected.
+
+From PowerShell with cmake on PATH:
+  .\Build-source.ps1
+
+Or from an x64 Visual Studio Developer PowerShell with cmake and ninja on PATH:
+  .\Build-source.ps1 -Generator Ninja
+
+Outputs:
+  build/NoiseBase_artefacts/Release/VST3/NoiseBase.vst3/
+  build/NoiseBaseStandalone_artefacts/Release/NoiseBase.exe
+The runtime DLLs are copied beside both formats after linking.
+
+All first-party NoiseBase files in this source distribution are supplied under
+AGPL-3.0-or-later; see COPYING. Third-party code/models retain their own licences.
+JUCE: https://github.com/juce-framework/JUCE (tag 9.0.6)
+ONNX Runtime: https://www.nuget.org/packages/Microsoft.ML.OnnxRuntime/1.32.0
+Silero VAD: https://github.com/snakers4/silero-vad
+
+Utilities supported by NoiseBase.exe (file paths can be quoted):
+  --self-test --report engine-tests.json
+  --process input.wav output.wav --report processing.json
+  --render-ui faceplate.png --skin 0 --report render.json
+  --validate-plugin NoiseBase.vst3 --report validation.json
+  --ui-smoke input.wav new-output.wav --snapshot loaded.png --report workflow.json
+
+The model runs offline on CPU. The DLL is loaded explicitly from the current
+application or VST3 module directory, not from Python or a developer SDK path.

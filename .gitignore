@@ -1,0 +1,12 @@
+/build/
+/build-*/
+/.vs/
+/.idea/
+/outputs/
+/work/
+*.user
+*.suo
+*.pdb
+*.ilk
+*.log
+__pycache__/

@@ -1,0 +1,164 @@
+{
+  "version": "1.1.0",
+  "platform": "Windows x64",
+  "engine": {
+    "passed": true,
+    "unity_latency_tests": [
+      {
+        "sample_rate": 44100.0,
+        "latency_samples": 2048,
+        "unity_max_error": 3.725290298461914e-08,
+        "bypass_max_error_with_output_trim": 0.0,
+        "stereo_anti_phase_error": 0.0,
+        "passed": true
+      },
+      {
+        "sample_rate": 48000.0,
+        "latency_samples": 2048,
+        "unity_max_error": 3.725290298461914e-08,
+        "bypass_max_error_with_output_trim": 0.0,
+        "stereo_anti_phase_error": 0.0,
+        "passed": true
+      },
+      {
+        "sample_rate": 96000.0,
+        "latency_samples": 4096,
+        "unity_max_error": 3.725290298461914e-08,
+        "bypass_max_error_with_output_trim": 0.0,
+        "stereo_anti_phase_error": 0.0,
+        "passed": true
+      }
+    ]
+  },
+  "vst3": {
+    "name": "NoiseBase",
+    "discovered": true,
+    "state_roundtrip": true,
+    "editor_created": true,
+    "finite_output": true,
+    "runs": [
+      {
+        "sample_rate": 44100.0,
+        "latency_samples": 2048
+      },
+      {
+        "sample_rate": 48000.0,
+        "latency_samples": 2048
+      },
+      {
+        "sample_rate": 96000.0,
+        "latency_samples": 4096
+      }
+    ],
+    "passed": true
+  },
+  "standalone_file_workflow": {
+    "passed": true,
+    "load_and_auto_scan": true,
+    "preview_non_silent": true,
+    "pause_and_stop": true,
+    "export_created": true,
+    "status": "PRINT COMPLETE  /  noisebase-raster-ui-export.wav"
+  },
+  "visual_review": {
+    "independent_critic": true,
+    "all_three_skins": true,
+    "loaded_state": true,
+    "verdict": "Ready; no critical fixes."
+  },
+  "artwork": {
+    "generator": "Built-in image_gen",
+    "format": "PNG",
+    "asset_count": 8,
+    "live_native_overlays": [
+      "labels",
+      "scales",
+      "needles",
+      "control pointers"
+    ],
+    "sha256": {
+      "buttons.png": "2c7788e3d146c78bbb8d30072fccfab278fb57ac11c56dc4c3475fd99e79f765",
+      "graphite.png": "7f4e1a7fef3bc7e2c918b8434eee5a11cf3d76bb7a3abd431bad33b656a64969",
+      "ivory.png": "e7ce2816aed0d8de90d5580e9e9f573bffea5f5ecb1adaa40c33fdac3bf2acb1",
+      "knob.png": "78e0ee163d0b5d16af15c87d9ca10fb0f94e98dae7706f29758fbe24d68e2175",
+      "lamps.png": "b9778ddf724272eea64918309d383b430c90fbf048dca7de7ba2587fec528937",
+      "meter.png": "409cfb9c57742826ba0a606f3b8d9bf5cca8d9e426fd1546c0a5c8f32187bd69",
+      "switches.png": "853a8c3c8ebd7c3efbab4b10ac734dbf6abaae050263b1f721ccf58b494def2e",
+      "walnut.png": "8f4eed9f49e8305b76181360b521953d28440a14cc853871bbca1dc95f826980"
+    }
+  },
+  "tested_in_studio_one": false,
+  "physical_audio_device_tested": false,
+  "model_sha256": "1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3",
+  "packaged_plugin_validation": {
+    "name": "NoiseBase",
+    "discovered": true,
+    "state_roundtrip": true,
+    "auto_learning_audio_rendered": true,
+    "audio_samples": 551801,
+    "audio_sample_rate": 44100.0,
+    "offline_host_processing": true,
+    "finite_output": true,
+    "runs": [
+      {
+        "sample_rate": 44100.0,
+        "latency_samples": 2048
+      },
+      {
+        "sample_rate": 48000.0,
+        "latency_samples": 2048
+      },
+      {
+        "sample_rate": 96000.0,
+        "latency_samples": 4096
+      }
+    ],
+    "passed": true
+  },
+  "packaged_app_engine_tests": {
+    "passed": true,
+    "unity_latency_tests": [
+      {
+        "sample_rate": 44100.0,
+        "latency_samples": 2048,
+        "unity_max_error": 3.725290298461914e-08,
+        "bypass_max_error_with_output_trim": 0.0,
+        "stereo_anti_phase_error": 0.0,
+        "passed": true
+      },
+      {
+        "sample_rate": 48000.0,
+        "latency_samples": 2048,
+        "unity_max_error": 3.725290298461914e-08,
+        "bypass_max_error_with_output_trim": 0.0,
+        "stereo_anti_phase_error": 0.0,
+        "passed": true
+      },
+      {
+        "sample_rate": 96000.0,
+        "latency_samples": 4096,
+        "unity_max_error": 3.725290298461914e-08,
+        "bypass_max_error_with_output_trim": 0.0,
+        "stereo_anti_phase_error": 0.0,
+        "passed": true
+      }
+    ]
+  },
+  "audio_regression_against_1_0_0": {
+    "provided_lav_excerpt": true,
+    "standalone_export_identical_samples": true,
+    "vst3_render_identical_samples": true,
+    "sample_count": 551801,
+    "sample_rate": 44100,
+    "channels": 1
+  },
+  "binary_sha256": {
+    "Standalone/NoiseBase.exe": "c716a4d22c2614b00879fde2f78692eaa2620bbb1da6738b1e3f46263137c231",
+    "Standalone/onnxruntime.dll": "348c3d29d6995eee37e3451825eaddb7ea7400be3afda6ca2286b12bc775f042",
+    "Standalone/onnxruntime_providers_shared.dll": "6caf57ac07c9cf72fb4e73c5bb0fe156f02dd60bbbd7385530c9a5654f10f950",
+    "VST3/NoiseBase.vst3/Contents/Resources/moduleinfo.json": "0298d084b5f124ffe0f2455e937e720e0c996299beed78e95aa20cf01674e46a",
+    "VST3/NoiseBase.vst3/Contents/x86_64-win/NoiseBase.vst3": "4abeb788dfc9d2b5ffc1699c9580ebb49f9cfccca17297f52c582f300dc88351",
+    "VST3/NoiseBase.vst3/Contents/x86_64-win/onnxruntime.dll": "348c3d29d6995eee37e3451825eaddb7ea7400be3afda6ca2286b12bc775f042",
+    "VST3/NoiseBase.vst3/Contents/x86_64-win/onnxruntime_providers_shared.dll": "6caf57ac07c9cf72fb4e73c5bb0fe156f02dd60bbbd7385530c9a5654f10f950"
+  }
+}
