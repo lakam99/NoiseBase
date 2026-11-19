@@ -1,4 +1,4 @@
-NOISEBASE 1.1.0 - WINDOWS x64
+NOISEBASE 1.2.0 - WINDOWS x64
 Automatic dialogue denoising, with an analog hardware-style interface.
 
 IN THIS PACKAGE
@@ -37,17 +37,27 @@ are decoded and exported as WAV, not rewritten into the compressed container.
 PATCH BAY opens the audio-device settings. The default device setup uses no
 microphone inputs, so the file workflow does not require input monitoring.
 
-VST3 INSTALLATION
-Run Install-VST3.ps1 in PowerShell, or copy the entire NoiseBase.vst3 directory
-to a VST3 plug-in folder yourself. The script installs only this new plug-in,
-without changing an existing install or any DAW project.
+INSTALLATION AND UPDATES
+Run Install-NoiseBase.ps1 from the extracted NoiseBase folder. This installs
+both the standalone app and the complete VST3 for your user account, creates
+Start menu and Installed Apps entries, and preserves user settings.
 
-Default user destination:
-  %LOCALAPPDATA%\Programs\Common\VST3\NoiseBase.vst3
+Application: %LOCALAPPDATA%\Programs\NoiseBase
+VST3: %LOCALAPPDATA%\Programs\Common\VST3\NoiseBase.vst3
 
-Restart/rescan plug-ins in your DAW. If needed, add the printed installation
-folder to its plug-in locations. Another conventional system location is
-C:\Program Files\Common Files\VST3 (writing there normally requires admin access).
+Rescan plug-ins in your DAW. Add the VST3 parent folder to its search locations
+if necessary. The installer verifies the release payload, protects unowned
+directories, refuses downgrades/in-use files, and rolls back failed file swaps.
+Close NoiseBase and DAWs using the VST3 before manually upgrading.
+
+The standalone app checks GitHub Releases on startup, at most once daily after
+a successful check. UPDATES offers a manual check and an automatic-check toggle.
+New stable versions offer Download update, then Install and restart. Packages
+must match GitHub's asset SHA-256 digest, SHA256SUMS.txt and per-file payload
+hashes. HTTPS and repository security establish trust; releases are not
+Authenticode-signed. No audio is sent to GitHub. The VST3 itself never checks
+for updates or replaces a module inside a running DAW. The previous installed
+version is retained as a backup; user settings and recordings are preserved.
 
 LIVE OPERATION
 Insert NoiseBase on a dialogue channel. Leave AUTO selected while playing

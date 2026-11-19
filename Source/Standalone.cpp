@@ -1,8 +1,9 @@
 #include "Processor.h"
 #include "Editor.h"
+#include "Updater.h"
 #include <fstream>
 
-class MainPanel final : public juce::AudioAppComponent {
+class MainPanel final : public juce::AudioAppComponent, private juce::Timer {
 public:
     MainPanel() {
         processor.standaloneMode.store(true);
@@ -10,6 +11,7 @@ public:
         preferences=std::make_unique<juce::PropertiesFile>(options);
         juce::MemoryBlock state;if(state.fromBase64Encoding(preferences->getValue("controls")))processor.setStateInformation(state.getData(),(int)state.getSize());
         editor=std::make_unique<NoiseBaseEditor>(processor);
+        editor->onUpdates=[this]{showUpdatesMenu();};
         editor->onDevices=[this]{
             auto selector=std::make_unique<juce::AudioDeviceSelectorComponent>(deviceManager,0,2,0,2,false,false,true,false);
             selector->setSize(500,420);
@@ -19,8 +21,9 @@ public:
         };
         addAndMakeVisible(*editor);setSize(editor->getWidth(),editor->getHeight());
         setAudioChannels(0,2);
+        startTimer(5000);
     }
-    ~MainPanel() override {shutdownAudio();juce::MemoryBlock state;processor.getStateInformation(state);preferences->setValue("controls",state.toBase64Encoding());preferences->saveIfNeeded();editor.reset();}
+    ~MainPanel() override {stopTimer();shutdownAudio();juce::MemoryBlock state;processor.getStateInformation(state);preferences->setValue("controls",state.toBase64Encoding());preferences->saveIfNeeded();editor.reset();}
     void prepareToPlay(int block,double rate) override {processor.prepareToPlay(rate,block);}
     void releaseResources() override {processor.releaseResources();}
     void getNextAudioBlock(const juce::AudioSourceChannelInfo& info) override {
@@ -29,6 +32,52 @@ public:
     }
     void resized() override {if(editor)editor->setBounds(getLocalBounds());}
 private:
+    void timerCallback() override {
+        startTimer(3600000);
+        auto installReport=juce::File(juce::SystemStats::getEnvironmentVariable("LOCALAPPDATA",{})).getChildFile("NoiseBase/last-update-result.json");
+        if(installReport.existsAsFile()) {
+            auto result=juce::JSON::parse(installReport);installReport.deleteFile();
+            if(result.isObject()&&!(bool)result["passed"])juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,"NoiseBase update was not installed",result["error"].toString());
+        }
+        auto now=juce::Time::getCurrentTime().toMilliseconds();
+        auto previous=preferences->getValue("lastUpdateCheck","0").getLargeIntValue();
+        if(preferences->getBoolValue("automaticUpdates",true)&&now-previous>=86400000)checkUpdates(false,false);
+    }
+    void showUpdatesMenu() {
+        juce::PopupMenu menu;menu.addItem(1,"Check for updates...");menu.addItem(2,"Automatically check for updates",true,preferences->getBoolValue("automaticUpdates",true));menu.addItem(3,"Open GitHub releases");
+        menu.showMenuAsync(juce::PopupMenu::Options{}.withTargetComponent(editor.get()),[safe=juce::Component::SafePointer<MainPanel>(this)](int item){
+            if(!safe)return;
+            if(item==1)safe->checkUpdates(true,false);
+            if(item==2){safe->preferences->setValue("automaticUpdates",!safe->preferences->getBoolValue("automaticUpdates",true));safe->preferences->saveIfNeeded();}
+            if(item==3)juce::URL("https://github.com/lakam99/NoiseBase/releases").launchInDefaultBrowser();
+        });
+    }
+    void checkUpdates(bool manual,bool prepare) {
+        if(updateBusy)return;
+        updateBusy=true;editor->setUpdateBusy(true);
+        updater.request(prepare,[safe=juce::Component::SafePointer<MainPanel>(this),manual,prepare](juce::var result){
+            if(!safe)return;
+            safe->updateBusy=false;safe->editor->setUpdateBusy(false);
+            if(!(bool)result["passed"]){
+                if(manual)juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,"NoiseBase updates",result["error"].toString());
+                return;
+            }
+            safe->preferences->setValue("lastUpdateCheck",juce::String(juce::Time::getCurrentTime().toMilliseconds()));safe->preferences->saveIfNeeded();
+            if(!(bool)result["available"]){if(manual)juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::InfoIcon,"NoiseBase updates","You are running NoiseBase " NOISEBASE_VERSION ". No newer stable release is available.");return;}
+            auto options=juce::MessageBoxOptions{}.withIconType(juce::MessageBoxIconType::InfoIcon).withTitle("NoiseBase "+result["version"].toString());
+            options=options.withMessage(prepare?"The update is downloaded and verified. Close other NoiseBase windows and any DAW using its VST3, then install and restart.":"A newer stable release is available on GitHub. Download and verify it now?").withButton(prepare?"Install and restart":"Download update",1).withButton("Later",0);
+            juce::AlertWindow::showAsync(options,[safe,prepare,result](int choice){
+                if(!safe||choice!=1)return;
+                if(!prepare){safe->checkUpdates(true,true);return;}
+                if(safe->processor.busy.load()||safe->processor.isPlaying()){juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,"NoiseBase updates","Stop playback and wait for scanning or export to finish before installing.");return;}
+                juce::String error;
+                if(NoiseBaseUpdater::installAndRestart(result,error))juce::JUCEApplication::getInstance()->systemRequestedQuit();
+                else juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,"NoiseBase updates",error);
+            });
+        });
+    }
+    NoiseBaseUpdater updater;
+    bool updateBusy=false;
     NoiseBaseProcessor processor;
     std::unique_ptr<NoiseBaseEditor> editor;
     std::unique_ptr<juce::PropertiesFile> preferences;
@@ -152,16 +201,23 @@ juce::var testFileDeck(const juce::File& source,const juce::File& output,const j
 class NoiseBaseApplication final : public juce::JUCEApplication {
 public:
     const juce::String getApplicationName() override {return "NoiseBase";}
-    const juce::String getApplicationVersion() override {return "1.1.0";}
+    const juce::String getApplicationVersion() override {return NOISEBASE_VERSION;}
     bool moreThanOneInstanceAllowed() override {return true;}
     void initialise(const juce::String& commandLine) override {
         auto args=juce::StringArray::fromTokens(commandLine,true);
         for(auto& item:args)item=item.unquoted();
         auto option=[&](const juce::String& name)->juce::String {int i=args.indexOf(name);return i>=0&&i+1<args.size()?args[i+1]:juce::String{};};
-        if(args.contains("--self-test")||args.contains("--process")||args.contains("--render-ui")||args.contains("--validate-plugin")||args.contains("--ui-smoke")) {
+        if(args.contains("--self-test")||args.contains("--process")||args.contains("--render-ui")||args.contains("--validate-plugin")||args.contains("--ui-smoke")||args.contains("--check-updates")) {
             try {
                 juce::var report;
-                if(args.contains("--self-test"))report=runEngineTests();
+                if(args.contains("--check-updates")) {
+                    NoiseBaseUpdater updater;bool finished=false;
+                    updater.request(false,[&](juce::var result){report=result;finished=true;});
+                    auto deadline=juce::Time::getMillisecondCounterHiRes()+40000;
+                    while(!finished&&juce::Time::getMillisecondCounterHiRes()<deadline)juce::MessageManager::getInstance()->runDispatchLoopUntil(25);
+                    if(!finished)throw std::runtime_error("Update check timed out.");
+                }
+                else if(args.contains("--self-test"))report=runEngineTests();
                 else if(args.contains("--ui-smoke")) {
                     int i=args.indexOf("--ui-smoke");if(i+2>=args.size())throw std::runtime_error("Use --ui-smoke input output --snapshot image.png");
                     report=testFileDeck(juce::File(args[i+1]),juce::File(args[i+2]),juce::File(option("--snapshot")),juce::jlimit(0,2,option("--skin").getIntValue()));

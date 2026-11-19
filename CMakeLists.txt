@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(NoiseBase VERSION 1.1.0 LANGUAGES C CXX)
+project(NoiseBase VERSION 1.2.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -30,7 +30,8 @@ target_compile_definitions(NoiseBase PUBLIC
 target_link_libraries(NoiseBase PRIVATE NoiseBaseModel juce::juce_audio_utils juce::juce_dsp
     PUBLIC juce::juce_recommended_config_flags)
 juce_add_gui_app(NoiseBaseStandalone COMPANY_NAME "RedWeb" PRODUCT_NAME "NoiseBase" NEEDS_CURL FALSE NEEDS_WEB_BROWSER FALSE)
-target_sources(NoiseBaseStandalone PRIVATE Source/Standalone.cpp)
+target_sources(NoiseBaseStandalone PRIVATE Source/Standalone.cpp Source/Updater.cpp)
+target_compile_definitions(NoiseBaseStandalone PRIVATE NOISEBASE_VERSION="${PROJECT_VERSION}")
 target_link_libraries(NoiseBaseStandalone PRIVATE NoiseBase juce::juce_recommended_config_flags)
 target_include_directories(NoiseBaseStandalone PRIVATE third_party/onnxruntime/build/native/include)
 set(ORT_DLL "${CMAKE_CURRENT_SOURCE_DIR}/third_party/onnxruntime/runtimes/win-x64/native/onnxruntime.dll")
@@ -39,4 +40,8 @@ foreach(target NoiseBase_VST3 NoiseBaseStandalone)
     add_custom_command(TARGET ${target} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different "${ORT_DLL}" "$<TARGET_FILE_DIR:${target}>"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different "${ORT_SHARED_DLL}" "$<TARGET_FILE_DIR:${target}>")
+endforeach()
+foreach(script NoiseBase-Update.ps1 Install-NoiseBase.ps1 Release-Common.ps1 Uninstall-NoiseBase.ps1)
+    add_custom_command(TARGET NoiseBaseStandalone POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_CURRENT_SOURCE_DIR}/scripts/${script}" "$<TARGET_FILE_DIR:NoiseBaseStandalone>/${script}")
 endforeach()

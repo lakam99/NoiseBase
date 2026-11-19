@@ -22,6 +22,8 @@ public:
     bool isInterestedInFileDrag(const juce::StringArray& files) override {return processor.standaloneMode.load()&&!processor.busy.load()&&files.size()==1;}
     void filesDropped(const juce::StringArray& files,int,int) override {if(isInterestedInFileDrag(files))processor.loadRecording(juce::File(files[0]));}
     std::function<void()> onDevices;
+    std::function<void()> onUpdates;
+    void setUpdateBusy(bool busy) {updates.setEnabled(!busy);updates.setButtonText(busy?"CHECKING":"UPDATES");}
 private:
     void timerCallback() override;
     void drawMeter(juce::Graphics&,juce::Rectangle<float>,const juce::String&,float,bool);
@@ -32,6 +34,7 @@ private:
     juce::Slider reduction,preserve,mix,output,skin;
     juce::ToggleButton automatic{"AUTO LEARN"},bypass{"BYPASS"};
     juce::TextButton reset{"LEARN"},load{"LOAD TAPE"},scan{"SCAN"},play{"PLAY"},stop{"STOP"},save{"PRINT WAV"},devices{"PATCH BAY"};
+    juce::TextButton updates{"UPDATES"};
     std::vector<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>> sliders;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> autoAttachment,bypassAttachment;
     std::unique_ptr<juce::FileChooser> chooser;

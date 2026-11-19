@@ -60,6 +60,7 @@ NoiseBaseEditor::NoiseBaseEditor(NoiseBaseProcessor& p):AudioProcessorEditor(p),
     reset.onClick=[this]{processor.params.getParameter("auto")->setValueNotifyingHost(1);processor.resetProfile();};
     if(processor.standaloneMode.load()) {
         for(auto* c:{&load,&scan,&play,&stop,&save,&devices})addAndMakeVisible(c);
+        addAndMakeVisible(updates);updates.onClick=[this]{if(onUpdates)onUpdates();};
         load.onClick=[this]{openFile();};scan.onClick=[this]{processor.scanRecording();};
         play.onClick=[this]{processor.togglePlayback();};stop.onClick=[this]{processor.stopPlayback();};
         save.onClick=[this]{exportFile();};devices.onClick=[this]{if(onDevices)onDevices();};
@@ -125,7 +126,7 @@ void NoiseBaseEditor::paint(juce::Graphics& g) {
     if(!processor.detectorAvailable.load())live="SPEECH DETECTOR  /  warming up";
     if(processor.detectorFailed.load())live="DETECTOR UNAVAILABLE  /  restore the runtime files";
     if(processor.standaloneMode.load())live=processor.getStatus();
-    g.setFont(labelFont(10,false));g.setColour(look.ink());g.drawFittedText(live,{95,491,748,31},juce::Justification::centredLeft,2);
+    g.setFont(labelFont(10,false));g.setColour(look.ink());g.drawFittedText(live,{95,491,700,31},juce::Justification::centredLeft,2);
     if(processor.standaloneMode.load()) {
         g.setColour(look.ink().withAlpha(.20f));g.drawLine(72,540,888,540,1);
         g.setFont(labelFont(11,false));g.setColour(look.ink());g.drawFittedText(processor.fileMode.load()?processor.getFileName():"LOAD A RECORDING  /  automatic noise scan",{80,550,640,24},juce::Justification::centredLeft,1);
@@ -137,6 +138,7 @@ void NoiseBaseEditor::resized() {
     for(int i=0;i<4;++i){juce::Slider* controls[]{&reduction,&preserve,&mix,&output};controls[i]->setBounds(78+i*222,337,138,122);}
     automatic.setBounds(68,270,220,32);bypass.setBounds(578,270,230,32);reset.setBounds(432,274,96,25);
     if(processor.standaloneMode.load()) {
+        updates.setBounds(806,493,90,25);
         load.setBounds(80,594,132,27);scan.setBounds(224,594,100,27);play.setBounds(336,594,100,27);stop.setBounds(448,594,100,27);save.setBounds(560,594,150,27);devices.setBounds(724,594,155,27);
     }
 }

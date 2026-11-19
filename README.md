@@ -2,7 +2,7 @@
 
 Automatic dialogue denoising for Windows, available as a VST3 effect and a standalone application.
 
-[Download NoiseBase 1.1.0 for Windows x64](https://github.com/lakam99/NoiseBase/releases/tag/v1.1.0)
+[Download the latest NoiseBase release for Windows x64](https://github.com/lakam99/NoiseBase/releases/latest)
 
 ![NoiseBase Walnut interface](docs/images/walnut.png)
 
@@ -23,11 +23,25 @@ The standalone application scans an entire recording before preview or export. T
 
 Download and extract the Windows ZIP from [Releases](https://github.com/lakam99/NoiseBase/releases).
 
-For standalone use, run `Standalone/NoiseBase.exe`. Keep both ONNX Runtime DLLs beside it. Choose **LOAD TAPE**, wait for the automatic scan, then **PLAY** and adjust the controls. **PRINT WAV** writes a denoised copy and preserves the source.
+Run `Install-NoiseBase.ps1` from the extracted `NoiseBase` folder. It installs the standalone app, its update helpers, a Start menu shortcut, and the VST3 in your user account. It requires no administrator rights. Use Windows Installed Apps to uninstall it; recordings and user settings are preserved.
 
-For VST3 use, run `Install-VST3.ps1` from the extracted release folder, or copy its entire `VST3/NoiseBase.vst3` directory into a VST3 plug-in folder. Restart or rescan the DAW. Leave **AUTO** selected while playing a passage containing a pause, then use **HOLD** if needed. **LEARN** clears the profile and starts learning again.
+For standalone use, launch **NoiseBase** from Start. Choose **LOAD TAPE**, wait for the automatic scan, then **PLAY** and adjust the controls. **PRINT WAV** writes a denoised copy and preserves the source. Portable use through `Standalone/NoiseBase.exe` is also supported; keep all bundled DLLs and helper scripts beside it. In-app installation requires an installed copy.
 
-The default installer destination is `%LOCALAPPDATA%/Programs/Common/VST3`. It refuses to overwrite an existing installation. To upgrade, close the DAW and replace the old complete bundle manually. See the [Windows user guide](docs/Windows-user-guide.txt) for controls, installation details, and export behavior.
+The installer also installs the VST3. Alternatively, copy the entire `VST3/NoiseBase.vst3` directory into a VST3 plug-in folder. Restart or rescan the DAW. Leave **AUTO** selected while playing a passage containing a pause, then use **HOLD** if needed. **LEARN** clears the profile and starts learning again.
+
+The application is installed at `%LOCALAPPDATA%/Programs/NoiseBase`; the VST3 goes to `%LOCALAPPDATA%/Programs/Common/VST3/NoiseBase.vst3`. Add the latter's parent folder to your DAW's plug-in locations if necessary. The installer verifies payload hashes, protects unowned directories, refuses downgrades and in-use files, and rolls back failed file swaps. See the [Windows user guide](docs/Windows-user-guide.txt).
+
+## Automatic updates
+
+The standalone app checks [GitHub Releases](https://github.com/lakam99/NoiseBase/releases) on startup, at most daily after a successful check. **UPDATES** offers a manual check and an automatic-check toggle. A newer stable version offers **Download update**, then **Install and restart** after verification. Installation preserves settings and keeps the preceding version as a backup. Close DAWs using the VST3 before installing. The VST3 itself does not check the network or replace loaded modules.
+
+Downloads must match GitHub's SHA-256 asset digest, `SHA256SUMS.txt`, and every payload file in `release-manifest.json`. Paths and package identity are checked before installation. These checks detect corruption; release authenticity depends on HTTPS and this repository's security. Releases are not Authenticode-signed.
+
+## Release pipeline
+
+[Windows build and release](https://github.com/lakam99/NoiseBase/actions/workflows/release.yml) runs on main, pull requests, and stable version tags. Only a tag matching the CMake version publishes a release. The pipeline scans source/history, builds both formats, verifies audio and file workflows, tests installation/rollback/update policy, scans nested release archives, then uploads and verifies assets before publishing. Actions are pinned to full commit hashes; publishing uses a separate job with write permission.
+
+To release a new version, update the CMake project version and release notes, commit, then push the corresponding `vMAJOR.MINOR.PATCH` tag. Manual workflow runs build and verify without publishing.
 
 ## Build from source
 
