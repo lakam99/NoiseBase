@@ -1,6 +1,7 @@
 #pragma once
 #include "Processor.h"
 #include "RasterAssets.h"
+#include "VfdDisplay.h"
 
 struct HardwareLook final : juce::LookAndFeel_V4 {
     int skin=0;
@@ -23,7 +24,7 @@ public:
     void filesDropped(const juce::StringArray& files,int,int) override {if(isInterestedInFileDrag(files))processor.loadRecording(juce::File(files[0]));}
     std::function<void()> onDevices;
     std::function<void()> onUpdates;
-    void setUpdateBusy(bool busy) {updates.setEnabled(!busy);updates.setButtonText(busy?"CHECKING":"UPDATES");}
+    void setUpdateBusy(bool busy,bool downloading=false) {updateBusy=busy;downloadingUpdate=downloading;updates.setEnabled(!busy);repaint();}
 private:
     void timerCallback() override;
     void drawMeter(juce::Graphics&,juce::Rectangle<float>,const juce::String&,float,bool);
@@ -33,8 +34,10 @@ private:
     HardwareLook look;
     juce::Slider reduction,preserve,mix,output,skin;
     juce::ToggleButton automatic{"AUTO LEARN"},bypass{"BYPASS"};
-    juce::TextButton reset{"LEARN"},load{"LOAD TAPE"},scan{"SCAN"},play{"PLAY"},stop{"STOP"},save{"PRINT WAV"},devices{"PATCH BAY"};
+    juce::TextButton reset{"LEARN"},load{"LOAD TAPE"},scan{"SCAN"},play,stop,loop,beginning,save{"PRINT WAV"},devices{"PATCH BAY"};
     juce::TextButton updates{"UPDATES"};
+    std::array<VfdLine,4> displayLines;
+    bool updateBusy=false,downloadingUpdate=false;
     std::vector<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>> sliders;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> autoAttachment,bypassAttachment;
     std::unique_ptr<juce::FileChooser> chooser;

@@ -1,4 +1,4 @@
-NOISEBASE 1.2.0 - WINDOWS x64
+NOISEBASE 1.3.0 - WINDOWS x64
 Automatic dialogue denoising, with an analog hardware-style interface.
 
 IN THIS PACKAGE
@@ -23,10 +23,21 @@ generation prompts are included in Artwork and in the source archive.
 The audio engine and parameter identifiers are unchanged from 1.0.0.
 
 STANDALONE
+The cyan vacuum fluorescent display contains all changing faceplate text:
+control values, selected skin, tape status, progress, filename, and time.
+Long filename/status lines scroll inside the display.
+
+Transport icons: play triangle toggles to pause bars while playing; stop square
+stops and rewinds; bar with left triangles returns to zero without changing
+play/pause; repeat arrows toggle looping. Loop mode shows a green jewel and
+LOOP ON in the VFD. Turning loop off finishes the current pass. Loop affects
+preview only; PRINT WAV always exports the source recording once. Loop mode
+is remembered between standalone launches.
+
 1. Run Standalone/NoiseBase.exe.
 2. LOAD TAPE, or drop a recording onto the faceplate. The app scans it
    automatically for speech-free sections and builds a noise profile.
-3. When TAPE READY appears, press PLAY. Use BYPASS for a level-aware comparison.
+3. When TAPE READY appears, press the play triangle. Use BYPASS for a level-aware comparison.
 4. Adjust REDUCTION, VOICE DETAIL, DRY/CLEAN and OUTPUT TRIM.
 5. PRINT WAV saves a denoised copy. The source cannot be overwritten.
 

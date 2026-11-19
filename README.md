@@ -16,6 +16,8 @@ The standalone application scans an entire recording before preview or export. T
 - Reduction, voice detail, dry/clean blend, output trim, and latency-aligned bypass.
 - Mono and stereo processing with a shared stereo mask.
 - Standalone file loading, automatic scanning, playback, and WAV export.
+- Classic cyan VFD for live values, filename, tape status, progress, and time.
+- Generated transport icons for play/pause, stop, loop, and return to beginning.
 - Ivory, Graphite, and Walnut skins with generated PNG faceplates and hardware artwork. Labels, needles, scales, and knob pointers remain live.
 - Host automation and saved control/skin state.
 
@@ -30,6 +32,8 @@ For standalone use, launch **NoiseBase** from Start. Choose **LOAD TAPE**, wait 
 The installer also installs the VST3. Alternatively, copy the entire `VST3/NoiseBase.vst3` directory into a VST3 plug-in folder. Restart or rescan the DAW. Leave **AUTO** selected while playing a passage containing a pause, then use **HOLD** if needed. **LEARN** clears the profile and starts learning again.
 
 The application is installed at `%LOCALAPPDATA%/Programs/NoiseBase`; the VST3 goes to `%LOCALAPPDATA%/Programs/Common/VST3/NoiseBase.vst3`. Add the latter's parent folder to your DAW's plug-in locations if necessary. VST3 backups are retained outside that scan folder. The installer verifies payload hashes, protects unowned directories, refuses downgrades and in-use files, and rolls back failed file swaps. See the [Windows user guide](docs/Windows-user-guide.txt).
+
+The standalone tape deck uses icon buttons. **Play/pause** toggles playback, **stop** stops and rewinds, **return to beginning** jumps to zero while preserving play or pause, and **loop** repeats the recording during preview. A green jewel and `LOOP ON` in the VFD indicate that repeat is enabled. Disabling loop finishes the current pass. Exports always process the original duration once.
 
 ## Automatic updates
 

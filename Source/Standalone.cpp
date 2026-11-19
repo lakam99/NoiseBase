@@ -3,6 +3,13 @@
 #include "Updater.h"
 #include <fstream>
 
+namespace {
+void writeSnapshot(const juce::File& file,const juce::Image& image) {
+    juce::MemoryOutputStream bytes;juce::PNGImageFormat png;
+    if(!png.writeImageToStream(image,bytes)||!file.replaceWithData(bytes.getData(),bytes.getDataSize()))throw std::runtime_error("Could not replace the preview PNG.");
+}
+}
+
 class MainPanel final : public juce::AudioAppComponent, private juce::Timer {
 public:
     MainPanel() {
@@ -10,6 +17,7 @@ public:
         juce::PropertiesFile::Options options;options.applicationName="NoiseBase";options.filenameSuffix="settings";options.folderName="NoiseBase";options.osxLibrarySubFolder="Application Support";
         preferences=std::make_unique<juce::PropertiesFile>(options);
         juce::MemoryBlock state;if(state.fromBase64Encoding(preferences->getValue("controls")))processor.setStateInformation(state.getData(),(int)state.getSize());
+        processor.setLooping(preferences->getBoolValue("tapeLoop",false));
         editor=std::make_unique<NoiseBaseEditor>(processor);
         editor->onUpdates=[this]{showUpdatesMenu();};
         editor->onDevices=[this]{
@@ -23,7 +31,7 @@ public:
         setAudioChannels(0,2);
         startTimer(5000);
     }
-    ~MainPanel() override {stopTimer();shutdownAudio();juce::MemoryBlock state;processor.getStateInformation(state);preferences->setValue("controls",state.toBase64Encoding());preferences->saveIfNeeded();editor.reset();}
+    ~MainPanel() override {stopTimer();shutdownAudio();juce::MemoryBlock state;processor.getStateInformation(state);preferences->setValue("controls",state.toBase64Encoding());preferences->setValue("tapeLoop",processor.isLooping());preferences->saveIfNeeded();editor.reset();}
     void prepareToPlay(int block,double rate) override {processor.prepareToPlay(rate,block);}
     void releaseResources() override {processor.releaseResources();}
     void getNextAudioBlock(const juce::AudioSourceChannelInfo& info) override {
@@ -54,7 +62,7 @@ private:
     }
     void checkUpdates(bool manual,bool prepare) {
         if(updateBusy)return;
-        updateBusy=true;editor->setUpdateBusy(true);
+        updateBusy=true;editor->setUpdateBusy(true,prepare);
         updater.request(prepare,[safe=juce::Component::SafePointer<MainPanel>(this),manual,prepare](juce::var result){
             if(!safe)return;
             safe->updateBusy=false;safe->editor->setUpdateBusy(false);
@@ -152,7 +160,7 @@ juce::var validatePlugin(const juce::File& file,const juce::File& snapshot,const
         std::unique_ptr<juce::AudioProcessorEditor> editor(plugin->createEditorIfNeeded());
         if(!editor)throw std::runtime_error("VST3 editor creation failed.");
         auto image=editor->createComponentSnapshot(editor->getLocalBounds(),true,1.0f);
-        juce::FileOutputStream stream(snapshot);juce::PNGImageFormat png;png.writeImageToStream(image,stream);
+        writeSnapshot(snapshot,image);
         report->setProperty("editor_created",true);
     }
     report->setProperty("finite_output",finite);report->setProperty("runs",runs);report->setProperty("passed",finite&&saved.getSize()>0);
@@ -174,6 +182,17 @@ juce::var testFileDeck(const juce::File& source,const juce::File& output,const j
     };
     waitForJob();
     if(!processor.analysed.load())throw std::runtime_error(processor.getStatus().toStdString());
+    // Verify the loop junction against independent reads of the original file.
+    juce::AudioFormatManager formats;formats.registerBasicFormats();
+    std::unique_ptr<juce::AudioFormatReader> reference(formats.createReaderFor(source));
+    TapeReaderSource repeat(std::unique_ptr<juce::AudioFormatReader>(formats.createReaderFor(source)));
+    int seam=(int)std::min<juce::int64>(8,repeat.getTotalLength());
+    juce::AudioBuffer<float> actual(2,seam*2),expected(2,seam*2);expected.clear();
+    reference->read(&expected,0,seam,repeat.getTotalLength()-seam,true,true);reference->read(&expected,seam,seam,0,true,true);
+    repeat.setLooping(true);repeat.setNextReadPosition(repeat.getTotalLength()-seam);
+    repeat.getNextAudioBlock({&actual,0,seam*2});
+    bool exactLoop=true;for(int c=0;c<2;++c)for(int i=0;i<seam*2;++i)exactLoop &= std::abs(actual.getSample(c,i)-expected.getSample(c,i))<1e-7f;
+    if(!exactLoop)throw std::runtime_error("Loop junction did not match the source samples.");
     processor.togglePlayback();
     juce::MessageManager::getInstance()->runDispatchLoopUntil(100);
     double energy=0;
@@ -184,17 +203,46 @@ juce::var testFileDeck(const juce::File& source,const juce::File& output,const j
         if(repeat%12==0)juce::MessageManager::getInstance()->runDispatchLoopUntil(2);
     }
     processor.togglePlayback();
-    bool paused=!processor.isPlaying();processor.stopPlayback();
+    bool paused=!processor.isPlaying();processor.returnToStart();
+    bool rewindPaused=!processor.isPlaying()&&processor.playbackPosition()<.001;
+    processor.togglePlayback();processor.returnToStart();
+    bool rewindPlaying=processor.isPlaying()&&processor.playbackPosition()<.001;
+    int observedWraps=0;
+    auto runTape=[&](double seconds) {
+        int blocks=(int)std::ceil(seconds*48000/512)+4096;
+        double tailEnergy=0;
+        double elapsed=0,previous=processor.playbackPosition();
+        for(int block=0;block<blocks&&elapsed<seconds&&processor.isPlaying();++block){
+            juce::AudioBuffer<float> audio(2,512);audio.clear();juce::MidiBuffer midi;processor.processBlock(audio,midi);
+            double position=processor.playbackPosition();
+            if(position<previous-.1){++observedWraps;elapsed+=processor.playbackDuration()-previous+position;}else elapsed+=std::max(0.0,position-previous);
+            previous=position;
+            if(elapsed>seconds-.3)for(int i=0;i<512;++i)tailEnergy+=audio.getSample(0,i)*audio.getSample(0,i);
+            if(block%12==0)juce::MessageManager::getInstance()->runDispatchLoopUntil(2);
+        }
+        return tailEnergy;
+    };
+    processor.setLooping(true);
+    auto duration=processor.playbackDuration();
+    auto loopEnergy=runTape(duration+.5);
+    bool repeats=observedWraps>0&&processor.isPlaying()&&processor.playbackPosition()<duration&&loopEnergy>1e-12;
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(70);
+    {auto image=editor.createComponentSnapshot(editor.getLocalBounds(),true,1.0f);writeSnapshot(snapshot.getSiblingFile(snapshot.getFileNameWithoutExtension()+"-loop.png"),image);}
+    processor.setLooping(false);runTape(duration+.5);
+    bool eofStops=!processor.isPlaying();processor.stopPlayback();
+    if(!rewindPaused||!rewindPlaying||!repeats||!eofStops)throw std::runtime_error("Transport rewind/loop/end-of-file verification failed.");
     if(energy<1e-9)throw std::runtime_error("File preview returned silence.");
     if(output.existsAsFile())throw std::runtime_error("Smoke test output already exists.");
     processor.saveRecording(output);waitForJob();
     if(!output.existsAsFile())throw std::runtime_error(processor.getStatus().toStdString());
     juce::MessageManager::getInstance()->runDispatchLoopUntil(100);
     auto image=editor.createComponentSnapshot(editor.getLocalBounds(),true,1.0f);
-    juce::FileOutputStream stream(snapshot);juce::PNGImageFormat png;png.writeImageToStream(image,stream);
+    writeSnapshot(snapshot,image);
     processor.releaseResources();
     auto* report=new juce::DynamicObject;report->setProperty("passed",paused&&energy>0);report->setProperty("load_and_auto_scan",true);
     report->setProperty("preview_non_silent",energy>0);report->setProperty("pause_and_stop",paused);report->setProperty("export_created",output.existsAsFile());
+    report->setProperty("sample_exact_loop_junction",exactLoop);report->setProperty("return_to_start_keeps_pause",rewindPaused);report->setProperty("return_to_start_keeps_play",rewindPlaying);
+    report->setProperty("loop_repeats_past_eof",repeats);report->setProperty("loop_off_stops_at_eof",eofStops);
     report->setProperty("status",processor.getStatus());return juce::var(report);
 }
 
@@ -233,15 +281,14 @@ public:
                     result->setProperty("noise_reference_seconds",analysis.profile.quietSeconds);result->setProperty("estimated",analysis.profile.estimated);
                     result->setProperty("output",output.getFullPathName());report=juce::var(result);
                 } else if(args.contains("--render-ui")) {
-                    NoiseBaseProcessor processor;processor.standaloneMode.store(true);
+                    NoiseBaseProcessor processor;processor.standaloneMode.store(!args.contains("--plugin-layout"));
                     int skin=juce::jlimit(0,2,option("--skin").getIntValue());
                     processor.params.getParameter("skin")->setValueNotifyingHost(skin*.5f);
                     NoiseBaseEditor editor(processor);
                     // Parameter attachments are updated before the snapshot is painted.
                     juce::MessageManager::getInstance()->runDispatchLoopUntil(60);
                     auto image=editor.createComponentSnapshot(editor.getLocalBounds(),true,1.0f);
-                    juce::FileOutputStream stream(juce::File(option("--render-ui")));juce::PNGImageFormat png;
-                    if(!png.writeImageToStream(image,stream))throw std::runtime_error("UI render failed.");
+                    writeSnapshot(juce::File(option("--render-ui")),image);
                     auto* result=new juce::DynamicObject;result->setProperty("passed",true);result->setProperty("skin",skin);report=juce::var(result);
                 } else report=validatePlugin(juce::File(option("--validate-plugin")),option("--snapshot").isEmpty()?juce::File{}:juce::File(option("--snapshot")),option("--input").isEmpty()?juce::File{}:juce::File(option("--input")),option("--render-audio").isEmpty()?juce::File{}:juce::File(option("--render-audio")));
                 if(!option("--report").isEmpty())juce::File(option("--report")).replaceWithText(juce::JSON::toString(report,true));

@@ -68,10 +68,10 @@ void NoiseBaseProcessor::queueProfile(const NoiseProfile& profile) {const juce::
 void NoiseBaseProcessor::loadRecording(const juce::File& file) {
     if(busy.load())return;
     std::unique_ptr<juce::AudioFormatReader> reader(formats.createReaderFor(file));
-    if(!reader || reader->numChannels>2 || reader->sampleRate<8000) {setStatus("Use a mono/stereo WAV, AIFF, FLAC or MP3");return;}
+    if(!reader || reader->numChannels>2 || reader->sampleRate<8000 || reader->lengthInSamples<=0) {setStatus("Use a nonempty mono/stereo WAV, AIFF, FLAC or MP3");return;}
     transport.stop();transport.setSource(nullptr);readerSource.reset();
     double rate=reader->sampleRate;
-    readerSource=std::make_unique<juce::AudioFormatReaderSource>(reader.release(),true);
+    readerSource=std::make_unique<TapeReaderSource>(std::move(reader));readerSource->setLooping(loopPlayback.load());
     transport.setSource(readerSource.get(),32768,&readAhead,rate);
     loadedFile=file;fileMode.store(true);analysed.store(false);
     {const juce::ScopedLock lock(statusLock);fileName=file.getFileName();}
@@ -106,3 +106,4 @@ void NoiseBaseProcessor::saveRecording(const juce::File& output) {
 }
 void NoiseBaseProcessor::togglePlayback(){if(fileMode.load()){if(transport.isPlaying())transport.stop();else{if(transport.getCurrentPosition()>=transport.getLengthInSeconds()-.01)transport.setPosition(0);transport.start();}}}
 void NoiseBaseProcessor::stopPlayback(){transport.stop();transport.setPosition(0);}
+void NoiseBaseProcessor::setLooping(bool enabled){auto position=transport.getCurrentPosition();loopPlayback.store(enabled);if(readerSource)readerSource->setLooping(enabled);if(fileMode.load())transport.setPosition(position);}

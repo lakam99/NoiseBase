@@ -1,5 +1,6 @@
 #pragma once
 #include "Offline.h"
+#include "TapeReaderSource.h"
 
 class NoiseBaseProcessor final : public juce::AudioProcessor {
 public:
@@ -31,6 +32,11 @@ public:
     void saveRecording(const juce::File&);
     void togglePlayback();
     void stopPlayback();
+    void returnToStart() {if(fileMode.load())transport.setPosition(0);}
+    void setLooping(bool);
+    bool isLooping() const {return loopPlayback.load();}
+    double playbackPosition() const {return transport.getCurrentPosition();}
+    double playbackDuration() const {return transport.getLengthInSeconds();}
     bool isPlaying() const {return transport.isPlaying();}
     juce::String getStatus() const;
     juce::String getFileName() const;
@@ -48,7 +54,8 @@ private:
     juce::AudioFormatManager formats;
     juce::AudioTransportSource transport;
     juce::TimeSliceThread readAhead{"NoiseBase file playback"};
-    std::unique_ptr<juce::AudioFormatReaderSource> readerSource;
+    std::unique_ptr<TapeReaderSource> readerSource;
+    std::atomic<bool> loopPlayback{false};
     juce::ThreadPool jobs{1};
     mutable juce::CriticalSection statusLock,analysisLock;
     juce::String status="AUTO listens for quieter sections",fileName="NO TAPE LOADED";

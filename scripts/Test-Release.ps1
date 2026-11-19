@@ -29,6 +29,24 @@ $export=Join-Path $Build ('fixture-export-'+[guid]::NewGuid().ToString('N')+'.wa
 Invoke-Check @('--ui-smoke',$fixture,$export,'--snapshot',(Join-Path $folder 'loaded.png'),'--skin','2') (Join-Path $folder 'file-workflow.json')
 foreach ($skin in 0..2) {
     $name=@('ivory','graphite','walnut')[$skin]
+    # Exercise replacement of an existing preview, rather than appending to it.
+    [IO.File]::WriteAllBytes((Join-Path $folder ($name+'.png')),[Text.Encoding]::ASCII.GetBytes('obsolete preview'))
     Invoke-Check @('--render-ui',(Join-Path $folder ($name+'.png')),'--skin',"$skin") (Join-Path $folder ($name+'.json'))
+    Invoke-Check @('--render-ui',(Join-Path $folder ($name+'-vst3.png')),'--plugin-layout','--skin',"$skin") (Join-Path $folder ($name+'-vst3.json'))
 }
+@'
+from pathlib import Path
+import struct,sys
+for path in Path(sys.argv[1]).glob('*.png'):
+ data=path.read_bytes()
+ assert data[:8]==b'\x89PNG\r\n\x1a\n',str(path)
+ offset=8
+ while offset<len(data):
+  size=struct.unpack('>I',data[offset:offset+4])[0]
+  kind=data[offset+4:offset+8]
+  offset+=size+12
+  if kind==b'IEND':break
+ assert kind==b'IEND' and offset==len(data),'Stale or concatenated PNG: '+str(path)
+'@ | python - $folder
+if ($LASTEXITCODE -ne 0) {throw 'Preview replacement validation failed.'}
 Write-Output 'Native engine, VST3, file workflow and skin render checks passed.'

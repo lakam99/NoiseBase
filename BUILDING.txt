@@ -27,6 +27,7 @@ Utilities supported by NoiseBase.exe (file paths can be quoted):
   --self-test --report engine-tests.json
   --process input.wav output.wav --report processing.json
   --render-ui faceplate.png --skin 0 --report render.json
+  --render-ui plugin-faceplate.png --plugin-layout --skin 0 --report render.json
   --validate-plugin NoiseBase.vst3 --report validation.json
   --ui-smoke input.wav new-output.wav --snapshot loaded.png --report workflow.json
 

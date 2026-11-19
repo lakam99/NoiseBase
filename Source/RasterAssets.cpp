@@ -62,6 +62,9 @@ RasterAssets::RasterAssets() {
     auto rawMeter=png(BinaryData::meter_png,BinaryData::meter_pngSize);meter=rawMeter.getClippedImage(bodyBounds(rawMeter));
     switches=horizontalStates(png(BinaryData::switches_png,BinaryData::switches_pngSize));
     buttons=horizontalStates(png(BinaryData::buttons_png,BinaryData::buttons_pngSize));
+    auto glass=png(BinaryData::vfd_png,BinaryData::vfd_pngSize);vfd=glass.getClippedImage(bodyBounds(glass));
+    auto keys=png(BinaryData::transport_png,BinaryData::transport_pngSize);
+    for(int i=0;i<6;++i){auto cell=keys.getClippedImage({(i%3)*(keys.getWidth()/3),(i/3)*(keys.getHeight()/2),keys.getWidth()/3,keys.getHeight()/2});transport[(size_t)i]=cell.getClippedImage(bodyBounds(cell));}
     auto rawLamps=png(BinaryData::lamps_png,BinaryData::lamps_pngSize);
     int tileW=rawLamps.getWidth()/2,tileH=rawLamps.getHeight()/2;
     for(int i=0;i<4;++i){auto cell=rawLamps.getClippedImage({(i%2)*tileW,(i/2)*tileH,tileW,tileH});lamps[(size_t)i]=cell.getClippedImage(bodyBounds(cell));}
