@@ -22,6 +22,10 @@ try {
     $Vst3Root = [IO.Path]::GetFullPath($Vst3Root).TrimEnd('\','/')
     if ([IO.Path]::GetFileName($InstallRoot) -ine 'NoiseBase') { throw 'The application directory must be named NoiseBase.' }
     $appParent = Split-Path -Parent $InstallRoot
+    if ($Vst3Root -eq [IO.Path]::GetPathRoot($Vst3Root).TrimEnd('\','/')) { throw 'Choose a VST3 directory rather than a drive root.' }
+    $vstBackupRoot = Join-Path (Split-Path -Parent $Vst3Root) 'NoiseBase-Backups'
+    if ($vstBackupRoot -ieq $Vst3Root) { throw 'The VST3 directory cannot be the backup directory.' }
+    if ((Test-Path -LiteralPath $vstBackupRoot) -and ((Get-Item -LiteralPath $vstBackupRoot -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'The backup directory must not be a filesystem link.' }
     $vstTarget = Assert-ChildPath (Join-Path $Vst3Root 'NoiseBase.vst3') $Vst3Root
     if ($vstTarget.StartsWith($InstallRoot + '\', [StringComparison]::OrdinalIgnoreCase) -or $InstallRoot.StartsWith($vstTarget + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Application and VST3 directories must be separate.' }
     $null = Assert-ChildPath $InstallRoot $appParent
@@ -43,7 +47,7 @@ try {
     $stageApp = Assert-ChildPath ($InstallRoot + '.stage-' + $id) $appParent
     $stageVst = Assert-ChildPath ($vstTarget + '.stage-' + $id) $Vst3Root
     $backupApp = Assert-ChildPath ($InstallRoot + '.backup-' + $id) $appParent
-    $backupVst = Assert-ChildPath ($vstTarget + '.backup-' + $id) $Vst3Root
+    $backupVst = Assert-ChildPath (Join-Path $vstBackupRoot ('NoiseBase.vst3.backup-' + $id)) $vstBackupRoot
     $null = New-Item -ItemType Directory -Path $appParent,$Vst3Root -Force
     Copy-Item -LiteralPath (Join-Path $PackageRoot 'Standalone') -Destination $stageApp -Recurse
     Copy-Item -LiteralPath (Join-Path $PackageRoot 'VST3/NoiseBase.vst3') -Destination $stageVst -Recurse
@@ -54,7 +58,7 @@ try {
     }
     $info = [ordered]@{ product=$script:NoiseBaseProduct; repository=$script:NoiseBaseRepository; version=$manifest.version; installRoot=$InstallRoot; vst3Root=$Vst3Root; previousApp=$null; previousVst=$null }
     if (Test-Path -LiteralPath $InstallRoot) { Move-Item -LiteralPath $InstallRoot -Destination $backupApp; $appMoved=$true; $info.previousApp=$backupApp }
-    if (Test-Path -LiteralPath $vstTarget) { Move-Item -LiteralPath $vstTarget -Destination $backupVst; $vstMoved=$true; $info.previousVst=$backupVst }
+    if (Test-Path -LiteralPath $vstTarget) { $null=New-Item -ItemType Directory -Path $vstBackupRoot -Force; Move-Item -LiteralPath $vstTarget -Destination $backupVst; $vstMoved=$true; $info.previousVst=$backupVst }
     $info | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $stageApp '.noisebase-install.json') -Encoding UTF8
     @{ product=$script:NoiseBaseProduct; repository=$script:NoiseBaseRepository; version=$manifest.version } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $stageVst '.noisebase-owner.json') -Encoding UTF8
     Move-Item -LiteralPath $stageApp -Destination $InstallRoot; $appSwitched=$true
@@ -72,7 +76,7 @@ try {
     }
     # Keep the immediately previous version. Delete only older owned backups.
     if ($old) {
-        foreach ($pair in @(@($old.previousApp,$appParent,'NoiseBase.backup-','.noisebase-install.json'), @($old.previousVst,$Vst3Root,'NoiseBase.vst3.backup-','.noisebase-owner.json'))) {
+        foreach ($pair in @(@($old.previousApp,$appParent,'NoiseBase.backup-','.noisebase-install.json'), @($old.previousVst,$vstBackupRoot,'NoiseBase.vst3.backup-','.noisebase-owner.json'))) {
             if ($pair[0] -and (Test-Path -LiteralPath $pair[0])) {
                 try {
                     $obsolete = Assert-ChildPath $pair[0] $pair[1]

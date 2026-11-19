@@ -68,6 +68,7 @@ Expect-Failure {Get-VerifiedPackage $tampered}
 $updated=Get-Content -LiteralPath $marker -Raw | ConvertFrom-Json
 Assert-True (Test-Path -LiteralPath $updated.previousApp) 'Previous application version was not retained.'
 Assert-True (Test-Path -LiteralPath $updated.previousVst) 'Previous VST3 version was not retained.'
+Assert-True (-not $updated.previousVst.StartsWith($vstRoot+'\',[StringComparison]::OrdinalIgnoreCase)) 'VST3 backup is inside the plug-in scan directory.'
 & (Join-Path $PSScriptRoot 'Uninstall-NoiseBase.ps1') -InstallRoot $install -NoShortcuts -NoRegistration
 Assert-True (-not (Test-Path -LiteralPath $install)) 'Uninstall left the current app installed.'
 Assert-True (-not (Test-Path -LiteralPath $updated.previousApp)) 'Uninstall left the owned backup.'
