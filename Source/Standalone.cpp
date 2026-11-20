@@ -111,12 +111,14 @@ public:
 };
 
 juce::var validatePlugin(const juce::File& file,const juce::File& snapshot,const juce::File& input={},const juce::File& audioOutput={}) {
+    auto stage=[](const char* text){std::fprintf(stderr,"VST3 verification: %s\n",text);std::fflush(stderr);};stage("discover");
     juce::VST3PluginFormat format;
     juce::OwnedArray<juce::PluginDescription> descriptions;format.findAllTypesForFile(descriptions,file.getFullPathName());
     if(descriptions.isEmpty()) throw std::runtime_error("VST3 discovery returned no plug-in.");
     juce::String error;
     auto plugin=format.createInstanceFromDescription(*descriptions[0],48000,512,error);
     if(!plugin)throw std::runtime_error(error.toStdString());
+    stage("instance created");
     auto* report=new juce::DynamicObject;
     report->setProperty("name",plugin->getName());report->setProperty("discovered",true);
     juce::MemoryBlock saved;plugin->getStateInformation(saved);plugin->setStateInformation(saved.getData(),(int)saved.getSize());
@@ -151,6 +153,7 @@ juce::var validatePlugin(const juce::File& file,const juce::File& snapshot,const
         auto* run=new juce::DynamicObject;run->setProperty("sample_rate",rate);run->setProperty("latency_samples",plugin->getLatencySamples());runs.add(juce::var(run));
         plugin->releaseResources();
     }
+    stage("live input rates passed");
     // Load a self-contained learned model through the real VST3 component state.
     // This exercises the JUCE host wrapper as well as the processor callback.
     NoiseBaseProcessor stateBuilder;auto modelState=stateBuilder.params.copyState();
@@ -172,6 +175,7 @@ juce::var validatePlugin(const juce::File& file,const juce::File& snapshot,const
         auto* row=new juce::DynamicObject;row->setProperty("sample_rate",rate);row->setProperty("silent_input_generated_rms",rms);row->setProperty("passed",ok);generatedRuns.add(juce::var(row));plugin->releaseResources();
     }
     if(!generatedInHost)throw std::runtime_error("Saved procedural profile did not generate on silent VST3 host input.");
+    stage("saved procedural profile passed");
     report->setProperty("procedural_profile_saved_and_restored_in_vst3",true);report->setProperty("procedural_silent_host_runs",generatedRuns);
     plugin->setStateInformation(saved.getData(),(int)saved.getSize());
     if(input.existsAsFile()) {
@@ -211,6 +215,7 @@ juce::var validatePlugin(const juce::File& file,const juce::File& snapshot,const
         report->setProperty("editor_created",true);
     }
     report->setProperty("finite_output",finite);report->setProperty("live_noise_only_zero_reduction_error",liveNoiseSilence);report->setProperty("runs",runs);report->setProperty("passed",finite&&saved.getSize()>0&&liveNoiseSilence<.00002f&&generatedInHost);
+    stage("editor and output passed; releasing host instance");
     return juce::var(report);
 }
 
