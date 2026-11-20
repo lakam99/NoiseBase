@@ -8,6 +8,11 @@ struct NoiseProfile {
     std::vector<float> power;
     double quietSeconds = 0;
     bool estimated = false;
+    // Aggregate quiet-frame statistics only; no recorded waveform is retained.
+    std::array<std::vector<float>,2> ambiencePower;
+    std::vector<float> ambienceCorrelation;
+    int sourceChannels = 1;
+    float variationDb = 0;
 };
 
 class DenoiseEngine {

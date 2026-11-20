@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(NoiseBase VERSION 1.4.0 LANGUAGES C CXX)
+project(NoiseBase VERSION 1.5.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -20,7 +20,7 @@ juce_add_plugin(NoiseBase
     COPY_PLUGIN_AFTER_BUILD FALSE VST3_CATEGORIES Fx Restoration
     NEEDS_WEB_BROWSER FALSE NEEDS_CURL FALSE)
 target_sources(NoiseBase PRIVATE
-    Source/DenoiseEngine.cpp Source/VoiceDetector.cpp Source/Offline.cpp Source/NoiseOutputTests.cpp
+    Source/DenoiseEngine.cpp Source/VoiceDetector.cpp Source/Offline.cpp Source/NoiseOutputTests.cpp Source/ProceduralNoise.cpp Source/ProceduralTests.cpp
     Source/Processor.cpp Source/Editor.cpp Source/RasterAssets.cpp Source/VfdDisplay.cpp Source/PluginEntry.cpp)
 target_include_directories(NoiseBase PUBLIC Source "${CMAKE_CURRENT_SOURCE_DIR}/third_party/JUCE/modules")
 target_include_directories(NoiseBase PRIVATE third_party/onnxruntime/build/native/include)

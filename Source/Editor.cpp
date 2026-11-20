@@ -26,10 +26,10 @@ void HardwareLook::drawToggleButton(juce::Graphics& g,juce::ToggleButton& b,bool
     auto r=b.getLocalBounds().toFloat();auto art=r.removeFromLeft(43).reduced(5,0);
     g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
     g.drawImage(RasterAssets::get().switches[b.getToggleState()?0:1],art,juce::RectanglePlacement::stretchToFit);
-    bool automatic=b.getButtonText().contains("AUTO"),noise=b.getButtonText()=="NOISE ONLY";g.setFont(labelFont(10));
+    bool automatic=b.getButtonText().contains("AUTO"),noise=b.getButtonText()=="NOISE BASE",procedural=b.getButtonText()=="PROCEDURAL";g.setFont(labelFont(10));
     auto text=r.reduced(4,1);auto top=text.removeFromTop(15);
-    g.setColour(ink().withAlpha(b.getToggleState()?1.0f:.40f));g.drawText(automatic?"AUTO":noise?"NOISE ONLY":"BYPASS",top,juce::Justification::centredLeft);
-    g.setColour(ink().withAlpha(b.getToggleState()?.40f:1.0f));g.drawText(automatic?"HOLD":noise?"CLEAN":"IN",text,juce::Justification::centredLeft);
+    g.setColour(ink().withAlpha(b.getToggleState()?1.0f:.40f));g.drawText(automatic?"AUTO":noise?"NOISE BASE":procedural?"PROCEDURAL":"BYPASS",top,juce::Justification::centredLeft);
+    g.setColour(ink().withAlpha(b.getToggleState()?.40f:1.0f));g.drawText(automatic?"HOLD":noise?"CLEAN":procedural?"REMOVED":"IN",text,juce::Justification::centredLeft);
 }
 void HardwareLook::drawButtonBackground(juce::Graphics& g,juce::Button& b,const juce::Colour&,bool,bool down) {
     auto r=b.getLocalBounds().toFloat().reduced(1);
@@ -62,26 +62,30 @@ NoiseBaseEditor::NoiseBaseEditor(NoiseBaseProcessor& p):AudioProcessorEditor(p),
     // All changing control values live in the fluorescent display.
     reduction.textFromValueFunction=[](double v){return juce::String(v,1)+" dB";};output.textFromValueFunction=[](double v){return juce::String(v,1)+" dB";};
     preserve.textFromValueFunction=[](double v){return juce::String(v,0)+" %";};mix.textFromValueFunction=[](double v){return juce::String(v,0)+" % clean";};
-    for(auto* c:{(juce::Component*)&automatic,(juce::Component*)&bypass,(juce::Component*)&noiseOnly,(juce::Component*)&reset})addAndMakeVisible(c);
+    for(auto* c:{(juce::Component*)&automatic,(juce::Component*)&bypass,(juce::Component*)&noiseOnly,(juce::Component*)&procedural,(juce::Component*)&reset})addAndMakeVisible(c);
     autoAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(p.params,"auto",automatic);
     bypassAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(p.params,"bypass",bypass);
     noiseAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(p.params,"noiseOnly",noiseOnly);
-    noiseOnly.setTooltip("Listen to or export the estimated removed noise. Speech can leak through where it overlaps noise; bypass restores the original.");
+    proceduralAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(p.params,"procedural",procedural);
+    noiseOnly.setTooltip("Select noise-base output or cleaned recording. Bypass restores the original.");
+    procedural.setTooltip("PROCEDURAL generates continuous fresh ambience from a loaded clip's quiet-frame statistics. REMOVED monitors the denoiser residual, which can include speech.");
     reset.onClick=[this]{processor.params.getParameter("auto")->setValueNotifyingHost(1);processor.resetProfile();};
+    for(auto* c:{&load,&scan,&save})addAndMakeVisible(c);
+    load.setButtonText("LOAD CLIP");load.setTooltip("Learn a procedural profile from a mono/stereo reference clip; saved profiles work without the original file");
+    load.onClick=[this]{openFile();};scan.onClick=[this]{processor.scanRecording();};save.onClick=[this]{exportFile();};
     if(processor.standaloneMode.load()) {
-        for(auto* c:{&load,&scan,&play,&stop,&loop,&beginning,&save,&devices})addAndMakeVisible(c);
+        for(auto* c:{&play,&stop,&loop,&beginning,&devices})addAndMakeVisible(c);
         play.setComponentID("transport-play");stop.setComponentID("transport-stop");loop.setComponentID("transport-loop");beginning.setComponentID("transport-start");
         play.setTitle("Play");stop.setTitle("Stop and rewind");loop.setTitle("Loop playback");beginning.setTitle("Return to beginning");
         play.setTooltip("Play / pause");stop.setTooltip("Stop and return to the beginning");loop.setTooltip("Repeat the whole recording");beginning.setTooltip("Return to the beginning, preserving play or pause");
         loop.setClickingTogglesState(true);loop.setToggleState(processor.isLooping(),juce::dontSendNotification);
         addAndMakeVisible(updates);updates.onClick=[this]{if(onUpdates)onUpdates();};
-        load.onClick=[this]{openFile();};scan.onClick=[this]{processor.scanRecording();};
         play.onClick=[this]{processor.togglePlayback();};stop.onClick=[this]{processor.stopPlayback();};
         loop.onClick=[this]{processor.setLooping(loop.getToggleState());};beginning.onClick=[this]{processor.returnToStart();};
-        save.onClick=[this]{exportFile();};devices.onClick=[this]{if(onDevices)onDevices();};
+        devices.onClick=[this]{if(onDevices)onDevices();};
     }
-    reduction.setTooltip("Maximum noise reduction, 0 to 24 dB");preserve.setTooltip("Protect quieter speech detail");mix.setTooltip("Dry / denoised blend; in noise-only mode this scales the removed-noise component");output.setTooltip("Output trim, -12 to +12 dB");skin.setTooltip("Ivory / Graphite / Walnut faceplates");
-    setSize(960,processor.standaloneMode.load()?668:540);startTimerHz(30);
+    reduction.setTooltip("Maximum denoiser reduction; procedural ambience is independent of reduction");preserve.setTooltip("Protect quieter speech detail in the denoiser");mix.setTooltip("Dry / clean blend; noise-base output level in procedural mode");output.setTooltip("Output trim, -12 to +12 dB");skin.setTooltip("Ivory / Graphite / Walnut faceplates");
+    setSize(960,668);startTimerHz(30);
 }
 NoiseBaseEditor::~NoiseBaseEditor(){stopTimer();if(auto* desktop=juce::Desktop::getInstanceWithoutCreating())desktop->removeDarkModeSettingListener(this);setLookAndFeel(nullptr);}
 void NoiseBaseEditor::darkModeSettingChanged(){look.setColourScheme(juce::Desktop::getInstance().isDarkModeActive()?HardwareLook::getDarkColourScheme():HardwareLook::getLightColourScheme());sendLookAndFeelChange();repaint();}
@@ -117,8 +121,8 @@ void NoiseBaseEditor::paint(juce::Graphics& g) {
     drawMeter(g,{64,112,260,150},"INPUT  /  dBFS",inputNeedle,false);
     drawMeter(g,{350,112,260,150},"REDUCTION  /  dB",reductionNeedle,true);
     drawMeter(g,{636,112,260,150},"OUTPUT  /  dBFS",outputNeedle,false);
-    const juce::StringArray names{"REDUCTION","VOICE DETAIL","DRY / CLEAN","OUTPUT TRIM"};
-    const juce::StringArray units{"dB","PRESERVE %","BLEND","dB"};
+    const juce::StringArray names{"REDUCTION","VOICE DETAIL","MIX / LEVEL","OUTPUT TRIM"};
+    const juce::StringArray units{"dB","PRESERVE %","%","dB"};
     for(int i=0;i<4;++i) {
         float x=87.0f+i*222;
         engraved(g,names[i],{x,305,120,20},look.ink(),11);
@@ -128,7 +132,7 @@ void NoiseBaseEditor::paint(juce::Graphics& g) {
         juce::StringArray labels;
         if(i==0){positions={0,.25f,.5f,.75f,1};labels={"0","6","12","18","24"};}
         else if(i==3){positions={0,.25f,.5f,.75f,1};labels={"-12","-6","0","+6","+12"};}
-        else if(i==2){positions={0,.5f,1};labels={"DRY","50","CLEAN"};}
+        else if(i==2){positions={0,.5f,1};labels={"0","50","100"};}
         else {positions={0,.5f,1};labels={"0","50","100"};}
         float cx=147+i*222,cy=398;
         for(size_t mark=0;mark<positions.size();++mark){float a=juce::MathConstants<float>::pi*(1.23f+1.54f*positions[mark]);g.setColour(look.ink());g.setFont(labelFont(10));g.drawText(labels[(int)mark],juce::Rectangle<float>{cx+std::sin(a)*66-19,cy-std::cos(a)*66-6,38,12},juce::Justification::centred);}
@@ -139,28 +143,29 @@ void NoiseBaseEditor::paint(juce::Graphics& g) {
     if(!processor.detectorAvailable.load())live="SPEECH DETECTOR  /  warming up";
     if(processor.detectorFailed.load())live="DETECTOR UNAVAILABLE  /  restore the runtime files";
     bool standalone=processor.standaloneMode.load();
-    juce::String routing=bypass.getToggleState()?"ORIGINAL / BYPASS":noiseOnly.getToggleState()?"NOISE ONLY":"CLEAN";
-    drawVfdHousing(g,{64,485,832,standalone?92.0f:40.0f});
+    bool generated=processor.proceduralSelected();
+    juce::String routing=bypass.getToggleState()?"ORIGINAL / BYPASS":noiseOnly.getToggleState()?(generated?"INFINITE NOISE":"REMOVED NOISE"):"CLEAN";
+    if(generated)live=processor.ambienceReady.load()?"PROFILE READY / GENERATING FRESH AMBIENCE":"LOAD CLIP / NEED AT LEAST 0.35S OF QUIET BACKGROUND";
+    drawVfdHousing(g,{64,485,832,92});
     juce::String controls=juce::StringArray{"IVORY","GRAPHITE","WALNUT"}[look.skin]+"  RED "+juce::String(reduction.getValue(),1)+" DB  VOICE "+juce::String(preserve.getValue(),1)+"%  MIX "+juce::String(mix.getValue(),1)+"%  OUT "+(output.getValue()>=0?"+":"")+juce::String(output.getValue(),1)+" DB";
-    if(standalone) {
-        live=processor.getStatus();
+    {
+        if((standalone&&(!generated||processor.fileMode.load()))||processor.busy.load()||processor.ambienceReady.load())live=processor.getStatus();
         if(processor.busy.load())live+="  "+juce::String((int)(processor.jobProgress.load()*100))+"%";
         else if(updateBusy)live=downloadingUpdate?"DOWNLOADING AND VERIFYING UPDATE":"CHECKING GITHUB RELEASES";
-        else if(processor.fileMode.load())live=(processor.isPlaying()?"PLAY  | ":processor.playbackPosition()>=processor.playbackDuration()-.001?"END   | ":processor.playbackPosition()>0?"PAUSE | ":"STOP  | ")+live+(processor.isLooping()?" | LOOP ON":"");
+        else if(standalone&&(processor.fileMode.load()||processor.ambienceReady.load()))live=(processor.isPlaying()?"PLAY  | ":!generated&&processor.playbackPosition()>=processor.playbackDuration()-.001?"END   | ":processor.playbackPosition()>0?"PAUSE | ":"STOP  | ")+live+(!generated&&processor.isLooping()?" | LOOP ON":"");
         displayLines[0].draw(g,controls,{82,495,796,17},1.65f,false);
         displayLines[1].draw(g,routing+" | "+live,{82,518,796,17});
-        displayLines[2].draw(g,processor.fileMode.load()?processor.getFileName():"NO TAPE LOADED",{82,543,558,17});
+        displayLines[2].draw(g,processor.fileMode.load()||processor.ambienceReady.load()?processor.getFileName():"NO CLIP PROFILE LOADED",{82,543,558,17});
         auto time=[](double value){int seconds=(int)std::max(0.0,value);return juce::String(seconds/60).paddedLeft('0',2)+":"+juce::String(seconds%60).paddedLeft('0',2);};
-        displayLines[3].draw(g,time(processor.playbackPosition())+" / "+time(processor.playbackDuration()),{683,543,195,17},1.65f,false);
-    } else {
-        displayLines[0].draw(g,controls,{80,491,800,14},1.35f,false);
-        displayLines[1].draw(g,routing+" | "+live,{80,507,800,14},1.35f);
+        displayLines[3].draw(g,standalone?(generated?time(processor.playbackPosition())+" / INF":time(processor.playbackPosition())+" / "+time(processor.playbackDuration())):"HOST CLOCK",{683,543,195,17},1.65f,false);
     }
+    if(!standalone)engraved(g,"HOST PLAYBACK  /  INFINITE PROFILE GENERATOR",{292,598,260,28},look.ink(),10);
 }
 void NoiseBaseEditor::resized() {
     skin.setBounds(85,37,74,63);
     for(int i=0;i<4;++i){juce::Slider* controls[]{&reduction,&preserve,&mix,&output};controls[i]->setBounds(78+i*222,337,138,122);}
-    automatic.setBounds(68,270,170,32);reset.setBounds(310,274,96,25);noiseOnly.setBounds(466,270,200,32);bypass.setBounds(734,270,150,32);
+    automatic.setBounds(68,270,145,32);reset.setBounds(224,274,82,25);noiseOnly.setBounds(330,270,165,32);procedural.setBounds(520,270,180,32);bypass.setBounds(750,270,140,32);
+    load.setBounds(72,596,118,32);scan.setBounds(198,596,80,32);save.setBounds(566,596,118,32);
     if(processor.standaloneMode.load()) {
         load.setBounds(72,596,118,32);scan.setBounds(198,596,80,32);
         beginning.setBounds(306,592,52,40);play.setBounds(366,592,52,40);stop.setBounds(426,592,52,40);loop.setBounds(486,592,52,40);
@@ -171,8 +176,10 @@ void NoiseBaseEditor::timerCallback() {
     int next=juce::jlimit(0,2,(int)std::round(processor.params.getRawParameterValue("skin")->load()));
     if(next!=look.skin){look.skin=next;sendLookAndFeelChange();}
     inputNeedle=.78f*inputNeedle+.22f*processor.inputLevel.load();outputNeedle=.78f*outputNeedle+.22f*processor.outputLevel.load();reductionNeedle=.78f*reductionNeedle+.22f*processor.reductionLevel.load();
-    bool busy=processor.busy.load();load.setEnabled(!busy);scan.setEnabled(!busy&&processor.fileMode.load());save.setEnabled(!busy&&processor.analysed.load());
-    for(auto* button:{&play,&stop,&beginning,&loop})button->setEnabled(processor.fileMode.load());
+    bool busy=processor.busy.load(),generated=processor.proceduralSelected()&&!bypass.getToggleState();load.setEnabled(!busy);scan.setEnabled(!busy&&processor.fileMode.load());save.setEnabled(!busy&&(generated?processor.ambienceReady.load():processor.analysed.load()));
+    reduction.setEnabled(!generated);preserve.setEnabled(!generated);automatic.setEnabled(!generated);reset.setEnabled(!generated);
+    for(auto* button:{&play,&stop,&beginning})button->setEnabled(generated?processor.ambienceReady.load():processor.fileMode.load());
+    loop.setEnabled(!generated&&processor.fileMode.load());
     auto transportId=processor.isPlaying()?"transport-pause":"transport-play";
     if(play.getComponentID()!=transportId){play.setComponentID(transportId);play.setTitle(processor.isPlaying()?"Pause":"Play");}
     loop.setToggleState(processor.isLooping(),juce::dontSendNotification);repaint();
@@ -182,7 +189,16 @@ void NoiseBaseEditor::openFile() {
     chooser->launchAsync(juce::FileBrowserComponent::openMode|juce::FileBrowserComponent::canSelectFiles,[safe=juce::Component::SafePointer<NoiseBaseEditor>(this)](const juce::FileChooser& c){if(safe && c.getResult().existsAsFile())safe->processor.loadRecording(c.getResult());});
 }
 void NoiseBaseEditor::exportFile() {
+    if(processor.proceduralSelected()&&!bypass.getToggleState()){
+        auto* dialog=new juce::AlertWindow("Print procedural ambience","Duration in seconds (1 to 3600). A seamless loop is generated from the learned profile.",juce::MessageBoxIconType::NoIcon);
+        dialog->addTextEditor("seconds","60","Seconds",false);dialog->addButton("Continue",1);dialog->addButton("Cancel",0);
+        dialog->enterModalState(true,juce::ModalCallbackFunction::create([safe=juce::Component::SafePointer<NoiseBaseEditor>(this),dialog](int choice){if(!safe||choice!=1)return;double seconds=dialog->getTextEditorContents("seconds").getDoubleValue();if(seconds<1||seconds>3600){juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,"Procedural duration","Enter a duration from 1 to 3600 seconds.");return;}safe->chooseExportFile(seconds);}),true);return;
+    }
+    chooseExportFile(60);
+}
+void NoiseBaseEditor::chooseExportFile(double seconds) {
     bool original=bypass.getToggleState(),noise=noiseOnly.getToggleState()&&!original;
-    chooser=std::make_unique<juce::FileChooser>(original?"Print original WAV":noise?"Print estimated noise WAV":"Print denoised WAV",juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile(original?"NoiseBase-original.wav":noise?"NoiseBase-noise-base.wav":"NoiseBase-denoised.wav"),"*.wav");
-    chooser->launchAsync(juce::FileBrowserComponent::saveMode|juce::FileBrowserComponent::canSelectFiles|juce::FileBrowserComponent::warnAboutOverwriting,[safe=juce::Component::SafePointer<NoiseBaseEditor>(this)](const juce::FileChooser& c){if(safe && c.getResult()!=juce::File{})safe->processor.saveRecording(c.getResult().withFileExtension("wav"));});
+    bool generated=noise&&procedural.getToggleState();
+    chooser=std::make_unique<juce::FileChooser>(original?"Print original WAV":generated?"Print seamless procedural ambience":noise?"Print estimated noise WAV":"Print denoised WAV",juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile(original?"NoiseBase-original.wav":generated?"NoiseBase-procedural-loop.wav":noise?"NoiseBase-noise-base.wav":"NoiseBase-denoised.wav"),"*.wav");
+    chooser->launchAsync(juce::FileBrowserComponent::saveMode|juce::FileBrowserComponent::canSelectFiles|juce::FileBrowserComponent::warnAboutOverwriting,[safe=juce::Component::SafePointer<NoiseBaseEditor>(this),seconds](const juce::FileChooser& c){if(safe && c.getResult()!=juce::File{})safe->processor.saveRecording(c.getResult().withFileExtension("wav"),seconds);});
 }

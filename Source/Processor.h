@@ -29,20 +29,22 @@ public:
     void resetProfile() {resetRequested.store(true);}
     void loadRecording(const juce::File&);
     void scanRecording();
-    void saveRecording(const juce::File&);
+    void saveRecording(const juce::File&,double ambienceSeconds=60);
     void togglePlayback();
     void stopPlayback();
-    void returnToStart() {if(fileMode.load())transport.setPosition(0);}
+    void returnToStart() {if(fileMode.load())transport.setPosition(0);ambienceSamples.store(0);}
     void setLooping(bool);
     bool isLooping() const {return loopPlayback.load();}
-    double playbackPosition() const {return transport.getCurrentPosition();}
-    double playbackDuration() const {return transport.getLengthInSeconds();}
-    bool isPlaying() const {return transport.isPlaying();}
+    bool proceduralSelected() const {return value("noiseOnly")>.5f&&value("procedural")>.5f;}
+    double playbackPosition() const {return proceduralSelected()?ambienceSamples.load()/playbackRate:transport.getCurrentPosition();}
+    double playbackDuration() const {return proceduralSelected()?0:transport.getLengthInSeconds();}
+    bool isPlaying() const {return proceduralSelected()?ambiencePlaying.load():transport.isPlaying();}
     juce::String getStatus() const;
     juce::String getFileName() const;
     std::atomic<float> inputLevel{0},outputLevel{0},reductionLevel{0},jobProgress{0},quietSeconds{0};
     std::atomic<bool> standaloneMode{false},fileMode{false},busy{false},analysed{false},detectorAvailable{false};
     std::atomic<bool> detectorFailed{false};
+    std::atomic<bool> ambienceReady{false};
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout layout();
     float value(const char* id) const {return params.getRawParameterValue(id)->load();}
@@ -50,6 +52,14 @@ private:
     void queueProfile(const NoiseProfile&);
     void processAudio(juce::AudioBuffer<float>&,bool forceBypass);
     DenoiseEngine engine;
+    ProceduralNoise generator;
+    juce::SmoothedValue<float> proceduralFade,ambienceGain;
+    NoiseProfile storedProfile;
+    mutable juce::CriticalSection profileStateLock;
+    std::atomic<bool> ambiencePlaying{false};
+    std::atomic<int64_t> ambienceSamples{0};
+    double playbackRate=48000;
+    bool wasProcedural=false;
     VoiceWorker voice;
     juce::AudioFormatManager formats;
     juce::AudioTransportSource transport;

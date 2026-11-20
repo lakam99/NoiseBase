@@ -36,6 +36,8 @@ foreach ($skin in 0..2) {
     Invoke-Check @('--render-ui',(Join-Path $folder ($name+'-vst3.png')),'--plugin-layout','--skin',"$skin") (Join-Path $folder ($name+'-vst3.json'))
     Invoke-Check @('--render-ui',(Join-Path $folder ($name+'-noise-only.png')),'--noise-only','--skin',"$skin") (Join-Path $folder ($name+'-noise-only.json'))
     Invoke-Check @('--render-ui',(Join-Path $folder ($name+'-vst3-noise-only.png')),'--plugin-layout','--noise-only','--skin',"$skin") (Join-Path $folder ($name+'-vst3-noise-only.json'))
+    Invoke-Check @('--render-ui',(Join-Path $folder ($name+'-procedural.png')),'--procedural','--skin',"$skin") (Join-Path $folder ($name+'-procedural.json'))
+    Invoke-Check @('--render-ui',(Join-Path $folder ($name+'-vst3-procedural.png')),'--plugin-layout','--procedural','--skin',"$skin") (Join-Path $folder ($name+'-vst3-procedural.json'))
 }
 @'
 from pathlib import Path

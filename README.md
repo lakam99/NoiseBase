@@ -14,7 +14,8 @@ The standalone application scans an entire recording before preview or export. T
 
 - Automatic noise profiling with speech-aware learning.
 - Reduction, voice detail, dry/clean blend, output trim, and latency-aligned bypass.
-- Noise-only monitoring in the VST3 and standalone app, plus noise-base WAV export.
+- Continuous procedural ambience from one reference clip, saved with the session.
+- Removed-noise monitoring, plus procedural seamless-loop and noise-base WAV export.
 - Mono and stereo processing with a shared stereo mask.
 - Standalone file loading, automatic scanning, playback, and WAV export.
 - Classic cyan VFD for live values, filename, tape status, progress, and time.
@@ -28,19 +29,25 @@ Download and extract the Windows ZIP from [Releases](https://github.com/lakam99/
 
 Run `Install-NoiseBase.ps1` from the extracted `NoiseBase` folder. It installs the standalone app, its update helpers, a Start menu shortcut, and the VST3 in your user account. It requires no administrator rights. Use Windows Installed Apps to uninstall it; recordings and user settings are preserved.
 
-For standalone use, launch **NoiseBase** from Start. Choose **LOAD TAPE**, wait for the automatic scan, then **PLAY** and adjust the controls. **PRINT WAV** writes a denoised copy and preserves the source. Portable use through `Standalone/NoiseBase.exe` is also supported; keep all bundled DLLs and helper scripts beside it. In-app installation requires an installed copy.
+For standalone use, launch **NoiseBase** from Start. Choose **LOAD CLIP**, wait for the automatic scan, then **PLAY** and adjust the controls. **PRINT WAV** writes the selected output and preserves the source. Portable use through `Standalone/NoiseBase.exe` is also supported; keep all bundled DLLs and helper scripts beside it. In-app installation requires an installed copy.
 
 The installer also installs the VST3. Alternatively, copy the entire `VST3/NoiseBase.vst3` directory into a VST3 plug-in folder. Restart or rescan the DAW. Leave **AUTO** selected while playing a passage containing a pause, then use **HOLD** if needed. **LEARN** clears the profile and starts learning again.
 
 The application is installed at `%LOCALAPPDATA%/Programs/NoiseBase`; the VST3 goes to `%LOCALAPPDATA%/Programs/Common/VST3/NoiseBase.vst3`. Add the latter's parent folder to your DAW's plug-in locations if necessary. VST3 backups are retained outside that scan folder. The installer verifies payload hashes, protects unowned directories, refuses downgrades and in-use files, and rolls back failed file swaps. See the [Windows user guide](docs/Windows-user-guide.txt).
 
-The standalone tape deck uses icon buttons. **Play/pause** toggles playback, **stop** stops and rewinds, **return to beginning** jumps to zero while preserving play or pause, and **loop** repeats the recording during preview. A green jewel and `LOOP ON` in the VFD indicate that repeat is enabled. Disabling loop finishes the current pass. Exports always process the original duration once.
+The standalone tape deck uses icon buttons. **Play/pause** toggles playback, **stop** stops and rewinds, **return to beginning** jumps to zero while preserving play or pause, and **loop** repeats the recording during preview. A green jewel and `LOOP ON` in the VFD indicate that repeat is enabled. Disabling loop finishes the current pass. Clean and removed-noise exports process the original duration once. Procedural mode generates continuously and has its own export duration.
 
-## Noise-only output and noise-base export
+## Procedural noise profile and continuous ambience
 
-Flip **NOISE ONLY / CLEAN** to NOISE ONLY to hear the estimated removed noise instead of the cleaned dialogue. This works during real-time VST3 playback and is automatable/saved in the host. In the standalone app, **PRINT WAV** exports whichever output is selected; the noise default filename is `NoiseBase-noise-base.wav`. Timing, channel layout and supported WAV format/metadata are preserved.
+Choose **LOAD CLIP** in either format, or drop one reference recording onto the faceplate. After the quiet-section scan, select **NOISE BASE** and **PROCEDURAL**. The generator creates fresh background continuously from the learned noise spectrum, channel levels, stereo correlation and gentle level variation. It carries on beyond the reference length and with silent host input. The standalone play/pause button controls generation; its elapsed display shows `INF`. The VST3 generates while the host processes it; host suspension or stopped processing also stops generation.
 
-This is the denoiser's removed-noise estimate. It can contain dialogue bleed where speech and noise overlap; it does not synthesize replacement ambience or guarantee a speech-free stem. Let AUTO learn a reliable noise floor from a pause, then use HOLD if desired. More VOICE DETAIL protects speech from removal. MIX controls how much removed noise is output; zero MIX or zero REDUCTION gives silence in noise-only mode. Bypass overrides the mode and restores the original track, including dialogue.
+The compact statistical model is saved in DAW state and standalone preferences. It stores no recorded waveform and does not need the source file after restoration. It requires at least 0.35 seconds of confidently detected quiet background; uncertain floor estimates are refused for synthesis. Detection can misclassify material, so audition the result. It generates a statistical ambience bed rather than reconstructing separate birds, vehicles, impacts or other recognizable events.
+
+**PRINT WAV** defaults to a **60-second seamless loop**, with an editable 1–3600 second duration. Its sample rate and mono/stereo layout follow the reference. MIX sets generated level, OUTPUT TRIM adjusts gain. Reduction and voice detail affect denoising, not procedural synthesis. Bypass restores the original, including dialogue. Older sessions retain their removed-noise route until you select PROCEDURAL explicitly.
+
+## Removed-noise monitoring
+
+Select **NOISE BASE** and **REMOVED** for the denoiser's estimated removed-noise stem, the 1.4 behavior. It can contain dialogue bleed where speech and noise overlap. Let AUTO learn a reliable floor from a pause, then use HOLD if desired. VOICE DETAIL protects speech from removal. MIX scales removed noise; zero MIX or zero REDUCTION gives silence in this mode. Removed-noise exports retain source timing, channel layout and supported WAV format/metadata. CLEAN selects denoised dialogue again.
 
 ## Window appearance
 

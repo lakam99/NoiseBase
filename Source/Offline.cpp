@@ -54,6 +54,11 @@ FileAnalysis analyseRecording(const juce::File& file,std::atomic<float>* progres
     juce::dsp::FFT fft(order);
     std::vector<float> window((size_t)size),data((size_t)size*2),power((size_t)bins),smooth((size_t)bins,0),minimum((size_t)bins,1e30f);
     std::vector<double> sum((size_t)bins,0);
+    std::array<std::vector<float>,2> channelPower,channelSpectrum;
+    std::array<std::vector<double>,2> channelSum;
+    for(int c=0;c<2;++c){channelPower[(size_t)c].resize((size_t)bins);channelSpectrum[(size_t)c].resize((size_t)size*2);channelSum[(size_t)c].assign((size_t)bins,0);}
+    std::vector<double> crossSum((size_t)bins,0);
+    double levelSum=0,levelSquared=0;
     for(int i=0;i<size;++i) window[(size_t)i]=.5f-.5f*std::cos(juce::MathConstants<float>::twoPi*i/(float)size);
     juce::AudioBuffer<float> part(result.channels,size);
     int used=0, seen=0; double quietEnergy=0;
@@ -65,7 +70,8 @@ FileAnalysis analyseRecording(const juce::File& file,std::atomic<float>* progres
             std::fill(data.begin(),data.end(),0);
             for(int i=0;i<size;++i) data[(size_t)i]=part.getSample(c,i)*window[(size_t)i];
             fft.performRealOnlyForwardTransform(data.data(),true);
-            for(int k=0;k<bins;++k) power[(size_t)k]=std::max(power[(size_t)k],data[(size_t)k*2]*data[(size_t)k*2]+data[(size_t)k*2+1]*data[(size_t)k*2+1]);
+            std::copy(data.begin(),data.end(),channelSpectrum[(size_t)c].begin());
+            for(int k=0;k<bins;++k){float p=data[(size_t)k*2]*data[(size_t)k*2]+data[(size_t)k*2+1]*data[(size_t)k*2+1];channelPower[(size_t)c][(size_t)k]=p;power[(size_t)k]=std::max(power[(size_t)k],p);}
         }
         ++seen;
         double energy=0;
@@ -78,7 +84,10 @@ FileAnalysis analyseRecording(const juce::File& file,std::atomic<float>* progres
         int a=(int)(pos/result.sampleRate/.032), b=(int)((pos+size)/result.sampleRate/.032)+1;
         for(int i=a;i<b && i<(int)quiet.size();++i) if(!quiet[(size_t)i]) ok=false;
         if(used>5 && energy>quietEnergy/used*4) ok=false;
-        if(ok) { ++used; quietEnergy+=energy; for(int k=0;k<bins;++k) sum[(size_t)k]+=power[(size_t)k]; }
+        if(ok) { ++used; quietEnergy+=energy;double db=10*std::log10(std::max(energy,1e-20));levelSum+=db;levelSquared+=db*db;
+            for(int k=0;k<bins;++k){sum[(size_t)k]+=power[(size_t)k];for(int c=0;c<2;++c)channelSum[(size_t)c][(size_t)k]+=channelPower[(size_t)std::min(c,result.channels-1)][(size_t)k];
+                auto& left=channelSpectrum[0];auto& right=channelSpectrum[(size_t)(result.channels-1)];crossSum[(size_t)k]+=left[(size_t)k*2]*right[(size_t)k*2]+left[(size_t)k*2+1]*right[(size_t)k*2+1];}
+        }
         if(progress) progress->store(.60f+.40f*(float)((double)pos/result.frames));
     }
     result.profile.fftSize=size; result.profile.sampleRate=result.sampleRate;
@@ -91,6 +100,11 @@ FileAnalysis analyseRecording(const juce::File& file,std::atomic<float>* progres
     }
     auto old=result.profile.power;
     for(int k=1;k<bins-1;++k) result.profile.power[(size_t)k]=.25f*old[(size_t)k-1]+.5f*old[(size_t)k]+.25f*old[(size_t)k+1];
+    result.profile.sourceChannels=result.channels;
+    result.profile.variationDb=(float)juce::jlimit(0.0,3.0,std::sqrt(std::max(0.0,levelSquared/std::max(used,1)-std::pow(levelSum/std::max(used,1),2))));
+    result.profile.ambienceCorrelation.resize((size_t)bins);
+    for(int c=0;c<2;++c){result.profile.ambiencePower[(size_t)c].resize((size_t)bins);for(int k=0;k<bins;++k)result.profile.ambiencePower[(size_t)c][(size_t)k]=(float)(channelSum[(size_t)c][(size_t)k]/std::max(used,1));}
+    for(int k=0;k<bins;++k)result.profile.ambienceCorrelation[(size_t)k]=(float)juce::jlimit(-1.0,1.0,crossSum[(size_t)k]/std::max(1e-30,std::sqrt(channelSum[0][(size_t)k]*channelSum[1][(size_t)k])));
     if(progress) progress->store(1);
     return result;
 }
@@ -171,5 +185,28 @@ juce::var runEngineTests() {
         row->setProperty("passed",ok); passed &= ok; results.add(juce::var(row));
     }
     auto noiseTests=runNoiseOutputTests();passed &= (bool)noiseTests["passed"];
+    auto proceduralTests=runProceduralTests();passed &= (bool)proceduralTests["passed"];
+    report->setProperty("procedural",proceduralTests);
     report->setProperty("passed",passed); report->setProperty("unity_latency_tests",results);report->setProperty("noise_only",noiseTests); return juce::var(report);
+}
+
+void exportAmbience(const NoiseProfile& profile,const juce::File& destination,double seconds,float mix,float outputDb,std::atomic<float>* progress,std::atomic<bool>* cancel,uint64_t seed){
+    if(!validAmbienceProfile(profile))throw std::runtime_error("Load a clip containing at least 0.35 seconds of confidently quiet background before generating ambience.");
+    if(!std::isfinite(seconds)||seconds<1||seconds>3600)throw std::runtime_error("Choose a duration from 1 to 3600 seconds.");
+    int channels=profile.sourceChannels;double rate=profile.sampleRate;int64_t length=(int64_t)std::llround(seconds*rate);int fade=(int)std::min<int64_t>((int64_t)(rate*.75),length/4);
+    ProceduralNoise generator;generator.prepare(rate,channels,seed);generator.setProfile(profile);float sample[2]{};
+    for(int i=0;i<(int)(rate*2);++i){if(i%8192==0)checkCancel(cancel);generator.next(sample);}
+    juce::AudioBuffer<float> preceding(channels,fade),block(channels,512);
+    for(int i=0;i<fade;++i){generator.next(sample);for(int c=0;c<channels;++c)preceding.setSample(c,i,sample[c]);}
+    juce::TemporaryFile temp(destination);std::unique_ptr<juce::OutputStream> stream(temp.getFile().createOutputStream());juce::WavAudioFormat wav;
+    auto writer=wav.createWriterFor(stream,juce::AudioFormatWriterOptions{}.withSampleRate(rate).withNumChannels(channels).withBitsPerSample(24));
+    if(!writer)throw std::runtime_error("Cannot create the procedural WAV.");
+    float gain=juce::jlimit(0.0f,1.0f,mix)*juce::Decibels::decibelsToGain(outputDb);
+    for(int64_t start=0;start<length;start+=512){checkCancel(cancel);int count=(int)std::min<int64_t>(512,length-start);
+        for(int i=0;i<count;++i){generator.next(sample);int64_t tail=start+i-(length-fade);float angle=tail>=0?(float)(juce::MathConstants<double>::halfPi*tail/std::max(1,fade-1)):0;
+            for(int c=0;c<channels;++c){float value=sample[c];if(tail>=0)value=value*std::cos(angle)+preceding.getSample(c,(int)tail)*std::sin(angle);block.setSample(c,i,value*gain);}}
+        if(!writer->writeFromAudioSampleBuffer(block,0,count))throw std::runtime_error("Could not write the procedural WAV.");
+        if(progress)progress->store((float)((double)(start+count)/length));
+    }
+    writer.reset();if(!temp.overwriteTargetFileWithTemporary())throw std::runtime_error("Could not commit the procedural WAV.");
 }

@@ -37,6 +37,7 @@ public:
     void releaseResources() override {processor.releaseResources();}
     void getNextAudioBlock(const juce::AudioSourceChannelInfo& info) override {
         juce::AudioBuffer<float> view(info.buffer->getArrayOfWritePointers(),std::min(2,info.buffer->getNumChannels()),info.startSample,info.numSamples);
+        if(!processor.fileMode.load())view.clear();
         juce::MidiBuffer midi;processor.processBlock(view,midi);
     }
     void resized() override {if(editor)editor->setBounds(getLocalBounds());}
@@ -143,6 +144,29 @@ juce::var validatePlugin(const juce::File& file,const juce::File& snapshot,const
         auto* run=new juce::DynamicObject;run->setProperty("sample_rate",rate);run->setProperty("latency_samples",plugin->getLatencySamples());runs.add(juce::var(run));
         plugin->releaseResources();
     }
+    // Load a self-contained learned model through the real VST3 component state.
+    // This exercises the JUCE host wrapper as well as the processor callback.
+    NoiseBaseProcessor stateBuilder;auto modelState=stateBuilder.params.copyState();
+    modelState.getChildWithProperty("id","noiseOnly").setProperty("value",1.0f,nullptr);
+    modelState.getChildWithProperty("id","procedural").setProperty("value",1.0f,nullptr);
+    NoiseProfile model;model.sampleRate=48000;model.fftSize=2048;model.quietSeconds=1;model.sourceChannels=2;
+    model.power.assign(1025,.375f*2048*.01f*.01f);model.ambiencePower[0]=model.power;model.ambiencePower[1]=model.power;model.ambienceCorrelation.assign(1025,.3f);
+    auto modelTree=ambienceProfileState(model);modelTree.setProperty("label","HOST TEST PROFILE",nullptr);modelState.appendChild(modelTree,nullptr);
+    juce::MemoryBlock componentState;juce::AudioProcessor::copyXmlToBinary(*modelState.createXml(),componentState);
+    juce::XmlElement wrapper("VST3PluginState");wrapper.createNewChildElement("IComponent")->addTextElement(componentState.toBase64Encoding());
+    juce::MemoryBlock wrapperState;juce::AudioProcessor::copyXmlToBinary(wrapper,wrapperState);
+    plugin->setStateInformation(wrapperState.getData(),(int)wrapperState.getSize());
+    juce::MemoryBlock hostSaved;plugin->getStateInformation(hostSaved);plugin->setStateInformation(saved.getData(),(int)saved.getSize());plugin->setStateInformation(hostSaved.getData(),(int)hostSaved.getSize());
+    bool generatedInHost=true;juce::Array<juce::var> generatedRuns;
+    for(double rate:{44100.0,48000.0,96000.0}){
+        plugin->setRateAndBufferSizeDetails(rate,137);plugin->prepareToPlay(rate,137);double energy=0;int measured=0;
+        for(int start=0;start<(int)(rate*2);start+=137){juce::AudioBuffer<float> audio(2,137);audio.clear();juce::MidiBuffer midi;plugin->processBlock(audio,midi);if(start>(int)rate)for(int i=0;i<137;++i){float sample=audio.getSample(0,i);finite&=std::isfinite(sample);energy+=sample*sample;++measured;}}
+        double rms=std::sqrt(energy/std::max(1,measured));bool ok=std::isfinite(rms)&&std::abs(rms/.01-1)<.12;generatedInHost&=ok;
+        auto* row=new juce::DynamicObject;row->setProperty("sample_rate",rate);row->setProperty("silent_input_generated_rms",rms);row->setProperty("passed",ok);generatedRuns.add(juce::var(row));plugin->releaseResources();
+    }
+    if(!generatedInHost)throw std::runtime_error("Saved procedural profile did not generate on silent VST3 host input.");
+    report->setProperty("procedural_profile_saved_and_restored_in_vst3",true);report->setProperty("procedural_silent_host_runs",generatedRuns);
+    plugin->setStateInformation(saved.getData(),(int)saved.getSize());
     if(input.existsAsFile()) {
         juce::AudioFormatManager formats;formats.registerBasicFormats();
         std::unique_ptr<juce::AudioFormatReader> reader(formats.createReaderFor(input));
@@ -179,17 +203,19 @@ juce::var validatePlugin(const juce::File& file,const juce::File& snapshot,const
         writeSnapshot(snapshot,image);
         report->setProperty("editor_created",true);
     }
-    report->setProperty("finite_output",finite);report->setProperty("live_noise_only_zero_reduction_error",liveNoiseSilence);report->setProperty("runs",runs);report->setProperty("passed",finite&&saved.getSize()>0&&liveNoiseSilence<.00002f);
+    report->setProperty("finite_output",finite);report->setProperty("live_noise_only_zero_reduction_error",liveNoiseSilence);report->setProperty("runs",runs);report->setProperty("passed",finite&&saved.getSize()>0&&liveNoiseSilence<.00002f&&generatedInHost);
     return juce::var(report);
 }
 
 juce::var testFileDeck(const juce::File& source,const juce::File& output,const juce::File& snapshot,int skin) {
     NoiseBaseProcessor processor;processor.standaloneMode.store(true);
     auto legacy=processor.params.copyState();legacy.removeChild(legacy.getChildWithProperty("id","noiseOnly"),nullptr);
+    legacy.removeChild(legacy.getChildWithProperty("id","procedural"),nullptr);
     juce::MemoryBlock legacyState;juce::AudioProcessor::copyXmlToBinary(*legacy.createXml(),legacyState);
     processor.params.getParameter("noiseOnly")->setValueNotifyingHost(1);processor.setStateInformation(legacyState.getData(),(int)legacyState.getSize());
-    bool legacyClean=processor.params.getRawParameterValue("noiseOnly")->load()<.5f;
+    bool legacyClean=processor.params.getRawParameterValue("noiseOnly")->load()<.5f&&processor.params.getRawParameterValue("procedural")->load()<.5f;
     if(!legacyClean)throw std::runtime_error("An older preset did not restore clean output.");
+    processor.params.getParameter("procedural")->setValueNotifyingHost(0);
     processor.params.getParameter("skin")->setValueNotifyingHost(skin*.5f);
     processor.prepareToPlay(48000,512);
     NoiseBaseEditor editor(processor);
@@ -266,6 +292,24 @@ juce::var testFileDeck(const juce::File& source,const juce::File& output,const j
     float tolerance=(float)(2.0/std::pow(2.0,std::max(16,(int)reference->bitsPerSample)-1)+.000001);
     if(reconstruction>tolerance)throw std::runtime_error("Noise and clean exports did not reconstruct the original.");
     bool noiseExportSaved=true;
+    processor.params.getParameter("procedural")->setValueNotifyingHost(1);
+    if(!processor.ambienceReady.load())throw std::runtime_error("Quiet reference did not produce a procedural profile.");
+    auto ambienceFile=output.getSiblingFile(output.getFileNameWithoutExtension()+"-procedural.wav");
+    processor.saveRecording(ambienceFile,3);waitForJob();
+    std::unique_ptr<juce::AudioFormatReader> ambienceReader(formats.createReaderFor(ambienceFile));
+    if(!ambienceReader||ambienceReader->lengthInSamples!=(int64_t)std::llround(reference->sampleRate*3)||ambienceReader->numChannels!=reference->numChannels)throw std::runtime_error("Procedural export duration or layout failed.");
+    juce::MemoryBlock proceduralState;processor.getStateInformation(proceduralState);
+    NoiseBaseProcessor restored;restored.setStateInformation(proceduralState.getData(),(int)proceduralState.getSize());restored.prepareToPlay(48000,137);
+    if(!restored.ambienceReady.load()||restored.fileMode.load())throw std::runtime_error("A profile was not restored independently of its source file.");
+    restored.params.getParameter("reduction")->setValueNotifyingHost(0);
+    double generatedEnergy=0;
+    int continuousSamples=(int)(48000*(2*reference->lengthInSamples/reference->sampleRate+1));
+    for(int i=0;i<continuousSamples;i+=137){juce::AudioBuffer<float> silence(2,137);silence.clear();juce::MidiBuffer midi;restored.processBlock(silence,midi);if(i>continuousSamples-48000)for(int k=0;k<137;++k){float sample=silence.getSample(0,k);if(!std::isfinite(sample))throw std::runtime_error("Procedural host output was non-finite.");generatedEnergy+=sample*sample;}}
+    if(generatedEnergy<1e-10)throw std::runtime_error("Restored profile stopped generating on silent host input.");
+    restored.standaloneMode.store(true);restored.togglePlayback();
+    if(!restored.isPlaying())throw std::runtime_error("Restored standalone profile cannot start without a source file.");
+    restored.stopPlayback();
+    restored.releaseResources();
     juce::MessageManager::getInstance()->runDispatchLoopUntil(100);
     auto image=editor.createComponentSnapshot(editor.getLocalBounds(),true,1.0f);
     writeSnapshot(snapshot,image);
@@ -275,6 +319,7 @@ juce::var testFileDeck(const juce::File& source,const juce::File& output,const j
     report->setProperty("sample_exact_loop_junction",exactLoop);report->setProperty("return_to_start_keeps_pause",rewindPaused);report->setProperty("return_to_start_keeps_play",rewindPlaying);
     report->setProperty("loop_repeats_past_eof",repeats);report->setProperty("loop_off_stops_at_eof",eofStops);
     report->setProperty("legacy_preset_restores_clean",legacyClean);report->setProperty("noise_export_preserves_timing_layout",noiseExportSaved);report->setProperty("clean_plus_noise_export_error",reconstruction);
+    report->setProperty("procedural_profile_restores_without_source",true);report->setProperty("procedural_output_on_silent_host",generatedEnergy>0);report->setProperty("procedural_continues_beyond_source_duration",true);report->setProperty("procedural_export_duration",3);
     report->setProperty("status",processor.getStatus());return juce::var(report);
 }
 
@@ -315,17 +360,20 @@ public:
                     auto analysis=analyseRecording(juce::File(args[i+1]));
                     juce::File output(args[i+2]);
                     if(output.existsAsFile())throw std::runtime_error("Output exists; choose a new copy.");
-                    exportRecording(analysis,output,14,.8f,1,0,nullptr,nullptr,args.contains("--noise-only"));
-                    auto* result=new juce::DynamicObject;result->setProperty("passed",true);result->setProperty("samples",(double)analysis.frames);
+                    double seconds=option("--seconds").isEmpty()?60:option("--seconds").getDoubleValue();
+                    if(args.contains("--procedural"))exportAmbience(analysis.profile,output,seconds,1,0);else exportRecording(analysis,output,14,.8f,1,0,nullptr,nullptr,args.contains("--noise-only"));
+                    auto* result=new juce::DynamicObject;result->setProperty("passed",true);result->setProperty("samples",args.contains("--procedural")?(double)std::llround(seconds*analysis.sampleRate):(double)analysis.frames);
                     result->setProperty("sample_rate",analysis.sampleRate);result->setProperty("channels",analysis.channels);
                     result->setProperty("noise_reference_seconds",analysis.profile.quietSeconds);result->setProperty("estimated",analysis.profile.estimated);
                     result->setProperty("noise_only",args.contains("--noise-only"));
+                    result->setProperty("procedural",args.contains("--procedural"));result->setProperty("seamless_loop",args.contains("--procedural"));
                     result->setProperty("output",output.getFullPathName());report=juce::var(result);
                 } else if(args.contains("--render-ui")) {
                     NoiseBaseProcessor processor;processor.standaloneMode.store(!args.contains("--plugin-layout"));
                     int skin=juce::jlimit(0,2,option("--skin").getIntValue());
                     processor.params.getParameter("skin")->setValueNotifyingHost(skin*.5f);
-                    processor.params.getParameter("noiseOnly")->setValueNotifyingHost(args.contains("--noise-only")?1:0);
+                    processor.params.getParameter("noiseOnly")->setValueNotifyingHost(args.contains("--noise-only")||args.contains("--procedural")?1:0);
+                    processor.params.getParameter("procedural")->setValueNotifyingHost(args.contains("--procedural")?1:0);
                     NoiseBaseEditor editor(processor);
                     // Parameter attachments are updated before the snapshot is painted.
                     juce::MessageManager::getInstance()->runDispatchLoopUntil(60);

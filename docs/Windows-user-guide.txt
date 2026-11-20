@@ -1,4 +1,4 @@
-NOISEBASE 1.4.0 - WINDOWS x64
+NOISEBASE 1.5.0 - WINDOWS x64
 Automatic dialogue denoising, with an analog hardware-style interface.
 
 IN THIS PACKAGE
@@ -20,7 +20,7 @@ button states and lamps use generated PNG artwork embedded in both builds.
 Live labels, calibration marks, needles and knob pointers remain native
 controls. No SVG artwork is used for the interface. Original PNGs and exact
 generation prompts are included in Artwork and in the source archive.
-The audio engine and parameter identifiers are unchanged from 1.0.0.
+Existing parameter identifiers are preserved; new controls are appended.
 
 STANDALONE
 The cyan vacuum fluorescent display contains all changing faceplate text:
@@ -31,13 +31,13 @@ Transport icons: play triangle toggles to pause bars while playing; stop square
 stops and rewinds; bar with left triangles returns to zero without changing
 play/pause; repeat arrows toggle looping. Loop mode shows a green jewel and
 LOOP ON in the VFD. Turning loop off finishes the current pass. Loop affects
-preview only; PRINT WAV always exports the source recording once. Loop mode
+preview only; clean/removed PRINT WAV exports the source recording once. Loop mode
 is remembered between standalone launches.
 
 1. Run Standalone/NoiseBase.exe.
-2. LOAD TAPE, or drop a recording onto the faceplate. The app scans it
+2. LOAD CLIP, or drop a recording onto the faceplate. The app scans it
    automatically for speech-free sections and builds a noise profile.
-3. When TAPE READY appears, press the play triangle. Use BYPASS for a level-aware comparison.
+3. When PROFILE READY appears, press the play triangle. Use BYPASS for a level-aware comparison.
 4. Adjust REDUCTION, VOICE DETAIL, DRY/CLEAN and OUTPUT TRIM.
 5. PRINT WAV saves a denoised copy. The source cannot be overwritten.
 
@@ -70,15 +70,37 @@ Authenticode-signed. No audio is sent to GitHub. The VST3 itself never checks
 for updates or replaces a module inside a running DAW. The previous installed
 version is retained as a backup; user settings and recordings are preserved.
 
-NOISE-ONLY MONITORING AND NOISE-BASE EXPORT
-The NOISE ONLY / CLEAN switch selects the processed output in both formats.
-NOISE ONLY outputs the component removed by the denoiser. In a VST3 this plays
+PROCEDURAL AMBIENCE FROM ONE CLIP
+LOAD CLIP works in the VST3 and standalone. Select NOISE BASE and PROCEDURAL
+after the scan to generate fresh continuous ambience from quiet-frame spectra,
+channel energy, stereo correlation and gentle level variation. It continues
+beyond the clip length and with silent host input. The host must keep processing
+the VST3; suspension/stopped processing also stops generation.
+
+The model stores aggregate statistics, not recorded waveform or speech snippets.
+It is saved with DAW sessions and standalone preferences, and works without the
+source file after restore. At least 0.35 seconds of confidently quiet background
+is required; an uncertain estimated floor cannot drive synthesis. Detection may
+misclassify material: audition the result. Distinct birds, vehicles, impacts and
+other recognizable events are not recreated by this statistical ambience bed.
+
+Play/pause controls standalone generation; stop resets elapsed time. The VFD
+shows INF; the recording-loop button is disabled because generation is already
+continuous. PRINT WAV defaults to a 60-second seamless loop; duration is editable
+from 1 to 3600 seconds. Rate and mono/stereo layout follow the reference. MIX is
+generated level, OUTPUT TRIM sets gain. Reduction and voice detail are denoiser
+controls. BYPASS restores the original. Existing sessions keep REMOVED routing
+until PROCEDURAL is explicitly selected.
+
+REMOVED-NOISE MONITORING AND NOISE-BASE EXPORT
+The NOISE BASE / CLEAN switch selects the processed output in both formats.
+NOISE BASE with REMOVED outputs the component removed by the denoiser. In a VST3 this plays
 through the host track in real time; in standalone it affects both preview and
 PRINT WAV. The VFD reports the active output. The export dialog offers
 NoiseBase-noise-base.wav by default when noise-only is active.
 
 This is an estimated removed-noise stem. Speech may bleed into it where speech
-and noise overlap. It does not synthesize replacement ambience. Learn a quiet
+and noise overlap. Select PROCEDURAL for synthesized ambience instead. Learn a quiet
 floor in AUTO before evaluating it; use HOLD to freeze a reliable profile.
 VOICE DETAIL helps prevent speech from being removed. MIX scales the removed
 component. Zero MIX or zero REDUCTION gives silence in noise-only mode.

@@ -21,7 +21,7 @@ public:
     ~NoiseBaseEditor() override;
     void paint(juce::Graphics&) override;
     void resized() override;
-    bool isInterestedInFileDrag(const juce::StringArray& files) override {return processor.standaloneMode.load()&&!processor.busy.load()&&files.size()==1;}
+    bool isInterestedInFileDrag(const juce::StringArray& files) override {return !processor.busy.load()&&files.size()==1;}
     void filesDropped(const juce::StringArray& files,int,int) override {if(isInterestedInFileDrag(files))processor.loadRecording(juce::File(files[0]));}
     std::function<void()> onDevices;
     std::function<void()> onUpdates;
@@ -32,16 +32,17 @@ private:
     void drawMeter(juce::Graphics&,juce::Rectangle<float>,const juce::String&,float,bool);
     void openFile();
     void exportFile();
+    void chooseExportFile(double seconds);
     NoiseBaseProcessor& processor;
     HardwareLook look;
     juce::Slider reduction,preserve,mix,output,skin;
-    juce::ToggleButton automatic{"AUTO LEARN"},bypass{"BYPASS"},noiseOnly{"NOISE ONLY"};
+    juce::ToggleButton automatic{"AUTO LEARN"},bypass{"BYPASS"},noiseOnly{"NOISE BASE"},procedural{"PROCEDURAL"};
     juce::TextButton reset{"LEARN"},load{"LOAD TAPE"},scan{"SCAN"},play,stop,loop,beginning,save{"PRINT WAV"},devices{"PATCH BAY"};
     juce::TextButton updates{"UPDATES"};
     std::array<VfdLine,4> displayLines;
     bool updateBusy=false,downloadingUpdate=false;
     std::vector<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>> sliders;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> autoAttachment,bypassAttachment,noiseAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> autoAttachment,bypassAttachment,noiseAttachment,proceduralAttachment;
     std::unique_ptr<juce::FileChooser> chooser;
     float inputNeedle=0,outputNeedle=0,reductionNeedle=0;
 };

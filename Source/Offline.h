@@ -1,6 +1,7 @@
 #pragma once
 #include "DenoiseEngine.h"
 #include "VoiceDetector.h"
+#include "ProceduralNoise.h"
 
 struct FileAnalysis {
     NoiseProfile profile;
@@ -17,3 +18,5 @@ void exportRecording(const FileAnalysis&,const juce::File& output,float reductio
                      float mix,float outputDb,std::atomic<float>* progress=nullptr,std::atomic<bool>* cancel=nullptr,bool noiseOnly=false);
 juce::var runEngineTests();
 juce::var runNoiseOutputTests();
+void exportAmbience(const NoiseProfile&,const juce::File&,double seconds,float mix,float outputDb,std::atomic<float>* progress=nullptr,std::atomic<bool>* cancel=nullptr,uint64_t seed=0);
+juce::var runProceduralTests();
