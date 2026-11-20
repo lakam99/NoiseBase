@@ -68,7 +68,13 @@ RasterAssets::RasterAssets() {
     // drawing of a clipped image can otherwise offset the nine-slice borders.
     int border=std::min(vfd.getWidth(),vfd.getHeight())/10;
     int vx[]{0,border,vfd.getWidth()-border,vfd.getWidth()},vy[]{0,border,vfd.getHeight()-border,vfd.getHeight()};
-    for(int y=0;y<3;++y)for(int x=0;x<3;++x)vfdPieces[(size_t)(y*3+x)]=vfd.getClippedImage({vx[x],vy[y],vx[x+1]-vx[x],vy[y+1]-vy[y]}).createCopy();
+    juce::Image::BitmapData source(vfd,juce::Image::BitmapData::readOnly);
+    for(int row=0;row<3;++row)for(int column=0;column<3;++column){
+        auto& tile=vfdPieces[(size_t)(row*3+column)];
+        tile=juce::Image(juce::Image::ARGB,vx[column+1]-vx[column],vy[row+1]-vy[row],true,juce::SoftwareImageType{});
+        juce::Image::BitmapData destination(tile,juce::Image::BitmapData::writeOnly);
+        for(int y=0;y<tile.getHeight();++y)for(int x=0;x<tile.getWidth();++x)destination.setPixelColour(x,y,source.getPixelColour(vx[column]+x,vy[row]+y));
+    }
     auto keys=png(BinaryData::transport_png,BinaryData::transport_pngSize);
     for(int i=0;i<6;++i){auto cell=keys.getClippedImage({(i%3)*(keys.getWidth()/3),(i/3)*(keys.getHeight()/2),keys.getWidth()/3,keys.getHeight()/2});transport[(size_t)i]=cell.getClippedImage(bodyBounds(cell));}
     auto rawLamps=png(BinaryData::lamps_png,BinaryData::lamps_pngSize);

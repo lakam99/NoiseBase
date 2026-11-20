@@ -85,7 +85,7 @@ NoiseBaseEditor::NoiseBaseEditor(NoiseBaseProcessor& p):AudioProcessorEditor(p),
         devices.onClick=[this]{if(onDevices)onDevices();};
     }
     reduction.setTooltip("Maximum denoiser reduction; procedural ambience is independent of reduction");preserve.setTooltip("Protect quieter speech detail in the denoiser");mix.setTooltip("Dry / clean blend; noise-base output level in procedural mode");output.setTooltip("Output trim, -12 to +12 dB");skin.setTooltip("Ivory / Graphite / Walnut faceplates");
-    setSize(960,668);startTimerHz(30);
+    setSize(960,668);timerCallback();startTimerHz(30);
 }
 NoiseBaseEditor::~NoiseBaseEditor(){stopTimer();if(auto* desktop=juce::Desktop::getInstanceWithoutCreating())desktop->removeDarkModeSettingListener(this);setLookAndFeel(nullptr);}
 void NoiseBaseEditor::darkModeSettingChanged(){look.setColourScheme(juce::Desktop::getInstance().isDarkModeActive()?HardwareLook::getDarkColourScheme():HardwareLook::getLightColourScheme());sendLookAndFeelChange();repaint();}
