@@ -19,6 +19,7 @@ void DenoiseEngine::prepare(double sr, int channels) {
     mixSmooth.reset(rate,.035); mixSmooth.setCurrentAndTargetValue(1);
     outputSmooth.reset(rate,.035); outputSmooth.setCurrentAndTargetValue(1);
     bypassSmooth.reset(rate,.025); bypassSmooth.setCurrentAndTargetValue(1);
+    noiseOnlySmooth.reset(rate,.025); noiseOnlySmooth.setCurrentAndTargetValue(0);
     meterInput=meterOutput=meterReduction=0;
 }
 
@@ -99,21 +100,28 @@ void DenoiseEngine::frame(float speech, float cap, float preserve, bool learn) {
     }
 }
 
-void DenoiseEngine::process(juce::AudioBuffer<float>& buffer,float speech,float cap,float preserve,float mix,float outputDb,bool learn,bool bypass) {
+void DenoiseEngine::process(juce::AudioBuffer<float>& buffer,float speech,float cap,float preserve,float mix,float outputDb,bool learn,bool bypass,bool noiseOnly) {
     juce::ScopedNoDenormals noDenormals;
     mixSmooth.setTargetValue(juce::jlimit(0.0f,1.0f,mix));
     outputSmooth.setTargetValue(bypass?1.0f:juce::Decibels::decibelsToGain(outputDb));
     bypassSmooth.setTargetValue(bypass?0.0f:1.0f);
+    noiseOnlySmooth.setTargetValue(noiseOnly?1.0f:0.0f);
     float peakIn=0,peakOut=0;
     for(int s=0;s<buffer.getNumSamples();++s) {
-        float blend=mixSmooth.getNextValue()*bypassSmooth.getNextValue();
+        float mixValue=mixSmooth.getNextValue(),active=bypassSmooth.getNextValue();
+        float blend=mixValue*active,listen=noiseOnlySmooth.getNextValue();
         float level=outputSmooth.getNextValue();
         for(int c=0;c<channelCount;++c) {
             float v=buffer.getSample(c,s); peakIn=std::max(peakIn,std::abs(v));
             float dry=input[(size_t)c][(size_t)inputPos];
             input[(size_t)c][(size_t)inputPos]=std::isfinite(v)?v:0;
             float wet=output[(size_t)c][(size_t)outputPos]; output[(size_t)c][(size_t)outputPos]=0;
-            float result=(dry+(wet-dry)*blend)*level;
+            float clean=dry+(wet-dry)*blend;
+            // Subtract before output trim, using the same delayed dry reference.
+            // Bypass restores the original even when noise-only remains selected.
+            float removed=(dry-wet)*mixValue;
+            float noise=dry+(removed-dry)*active;
+            float result=(clean+(noise-clean)*listen)*level;
             buffer.setSample(c,s,result); peakOut=std::max(peakOut,std::abs(result));
         }
         inputPos=(inputPos+1)%size;

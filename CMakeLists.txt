@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(NoiseBase VERSION 1.3.0 LANGUAGES C CXX)
+project(NoiseBase VERSION 1.4.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -10,16 +10,17 @@ juce_add_binary_data(NoiseBaseModel SOURCES resources/silero_vad.onnx
     resources/generated/ivory.png resources/generated/graphite.png resources/generated/walnut.png
     resources/generated/knob.png resources/generated/meter.png resources/generated/switches.png
     resources/generated/buttons.png resources/generated/lamps.png
-    resources/generated/vfd.png resources/generated/transport.png)
+    resources/generated/vfd.png resources/generated/transport.png resources/generated/app-icon.png)
 juce_add_plugin(NoiseBase
     COMPANY_NAME "RedWeb" BUNDLE_ID "studio.redweb.noisebase"
     PLUGIN_MANUFACTURER_CODE Rdwb PLUGIN_CODE Nbas
     FORMATS VST3 PRODUCT_NAME "NoiseBase"
+    ICON_BIG resources/generated/app-icon.png ICON_SMALL resources/generated/app-icon.png
     IS_SYNTH FALSE NEEDS_MIDI_INPUT FALSE NEEDS_MIDI_OUTPUT FALSE
     COPY_PLUGIN_AFTER_BUILD FALSE VST3_CATEGORIES Fx Restoration
     NEEDS_WEB_BROWSER FALSE NEEDS_CURL FALSE)
 target_sources(NoiseBase PRIVATE
-    Source/DenoiseEngine.cpp Source/VoiceDetector.cpp Source/Offline.cpp
+    Source/DenoiseEngine.cpp Source/VoiceDetector.cpp Source/Offline.cpp Source/NoiseOutputTests.cpp
     Source/Processor.cpp Source/Editor.cpp Source/RasterAssets.cpp Source/VfdDisplay.cpp Source/PluginEntry.cpp)
 target_include_directories(NoiseBase PUBLIC Source "${CMAKE_CURRENT_SOURCE_DIR}/third_party/JUCE/modules")
 target_include_directories(NoiseBase PRIVATE third_party/onnxruntime/build/native/include)
@@ -30,10 +31,14 @@ target_compile_definitions(NoiseBase PUBLIC
     JUCE_MODAL_LOOPS_PERMITTED=1)
 target_link_libraries(NoiseBase PRIVATE NoiseBaseModel juce::juce_audio_utils juce::juce_dsp
     PUBLIC juce::juce_recommended_config_flags)
-juce_add_gui_app(NoiseBaseStandalone COMPANY_NAME "RedWeb" PRODUCT_NAME "NoiseBase" NEEDS_CURL FALSE NEEDS_WEB_BROWSER FALSE)
-target_sources(NoiseBaseStandalone PRIVATE Source/Standalone.cpp Source/Updater.cpp)
+juce_add_gui_app(NoiseBaseStandalone COMPANY_NAME "RedWeb" PRODUCT_NAME "NoiseBase"
+    ICON_BIG resources/generated/app-icon.png ICON_SMALL resources/generated/app-icon.png NEEDS_CURL FALSE NEEDS_WEB_BROWSER FALSE)
+target_sources(NoiseBaseStandalone PRIVATE Source/Standalone.cpp Source/Updater.cpp Source/OsTheme.cpp)
 target_compile_definitions(NoiseBaseStandalone PRIVATE NOISEBASE_VERSION="${PROJECT_VERSION}")
 target_link_libraries(NoiseBaseStandalone PRIVATE NoiseBase juce::juce_recommended_config_flags)
+if(WIN32)
+    target_link_libraries(NoiseBaseStandalone PRIVATE dwmapi shell32)
+endif()
 target_include_directories(NoiseBaseStandalone PRIVATE third_party/onnxruntime/build/native/include)
 set(ORT_DLL "${CMAKE_CURRENT_SOURCE_DIR}/third_party/onnxruntime/runtimes/win-x64/native/onnxruntime.dll")
 set(ORT_SHARED_DLL "${CMAKE_CURRENT_SOURCE_DIR}/third_party/onnxruntime/runtimes/win-x64/native/onnxruntime_providers_shared.dll")

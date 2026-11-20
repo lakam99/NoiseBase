@@ -1,6 +1,7 @@
 #include "Processor.h"
 #include "Editor.h"
 #include "Updater.h"
+#include "OsTheme.h"
 #include <fstream>
 
 namespace {
@@ -24,7 +25,7 @@ public:
             auto selector=std::make_unique<juce::AudioDeviceSelectorComponent>(deviceManager,0,2,0,2,false,false,true,false);
             selector->setSize(500,420);
             juce::DialogWindow::LaunchOptions options;options.content.setOwned(selector.release());
-            options.dialogTitle="NoiseBase patch bay";options.dialogBackgroundColour=juce::Colour(0xff30332e);
+            options.dialogTitle="NoiseBase patch bay";options.dialogBackgroundColour=OsTheme::background(juce::Desktop::getInstance().isDarkModeActive());
             options.escapeKeyTriggersCloseButton=true;options.useNativeTitleBar=true;options.resizable=false;options.launchAsync();
         };
         addAndMakeVisible(*editor);setSize(editor->getWidth(),editor->getHeight());
@@ -96,7 +97,7 @@ class AppWindow final : public juce::DocumentWindow {
 public:
     AppWindow():DocumentWindow("NoiseBase",juce::Colour(0xff252923),allButtons) {
         setUsingNativeTitleBar(true);setContentOwned(new MainPanel,true);setResizable(false,false);
-        centreWithSize(getWidth(),getHeight());setVisible(true);
+        setIcon(RasterAssets::get().icon);centreWithSize(getWidth(),getHeight());OsTheme::setNativeFrame(*this,juce::Desktop::getInstance().isDarkModeActive());setVisible(true);
     }
     void closeButtonPressed() override {juce::JUCEApplication::getInstance()->systemRequestedQuit();}
 };
@@ -112,8 +113,19 @@ juce::var validatePlugin(const juce::File& file,const juce::File& snapshot,const
     report->setProperty("name",plugin->getName());report->setProperty("discovered",true);
     juce::MemoryBlock saved;plugin->getStateInformation(saved);plugin->setStateInformation(saved.getData(),(int)saved.getSize());
     report->setProperty("state_roundtrip",saved.getSize()>0);
+    juce::AudioProcessorParameter* noiseParameter=nullptr;
+    for(auto* parameter:plugin->getParameters())if(parameter->getName(128)=="Noise only")noiseParameter=parameter;
+    if(!noiseParameter)throw std::runtime_error("VST3 noise-only automation parameter is missing.");
+    noiseParameter->setValueNotifyingHost(1);juce::MemoryBlock noiseState;plugin->getStateInformation(noiseState);
+    noiseParameter->setValueNotifyingHost(0);plugin->setStateInformation(noiseState.getData(),(int)noiseState.getSize());
+    if(noiseParameter->getValue()<.5f)throw std::runtime_error("VST3 noise-only mode was not restored.");
+    report->setProperty("noise_only_automatable_and_saved",true);noiseParameter->setValueNotifyingHost(0);
+    juce::AudioProcessorParameter* reductionParameter=nullptr;
+    for(auto* parameter:plugin->getParameters())if(parameter->getName(128)=="Reduction")reductionParameter=parameter;
+    if(!reductionParameter)throw std::runtime_error("VST3 reduction parameter is missing.");
+    reductionParameter->setValueNotifyingHost(0);
     for(auto* param:plugin->getParameters()) if(auto* identified=dynamic_cast<juce::AudioProcessorParameterWithID*>(param)) if(identified->paramID=="reduction")param->setValueNotifyingHost(0);
-    bool finite=true;juce::Array<juce::var> runs;
+    bool finite=true;float liveNoiseSilence=0;juce::Array<juce::var> runs;
     for(double rate:{44100.0,48000.0,96000.0}) {
         plugin->setRateAndBufferSizeDetails(rate,512);plugin->prepareToPlay(rate,512);
         for(int block:{64,137,512}) {
@@ -124,6 +136,10 @@ juce::var validatePlugin(const juce::File& file,const juce::File& snapshot,const
                 for(int c=0;c<2;++c)for(int i=0;i<block;++i)finite &= std::isfinite(audio.getSample(c,i));
             }
         }
+        noiseParameter->setValueNotifyingHost(1);
+        // Actual live-host audio must cancel at zero reduction in noise mode.
+        for(int position=0;position<(int)(rate*.25)+plugin->getLatencySamples();position+=137){juce::AudioBuffer<float> audio(2,137);juce::MidiBuffer midi;for(int i=0;i<137;++i){float sample=.03f*std::sin((float)(position+i)*.11f);audio.setSample(0,i,sample);audio.setSample(1,i,-sample);}plugin->processBlock(audio,midi);for(int channel=0;channel<2;++channel)for(int i=0;i<137;++i){finite &= std::isfinite(audio.getSample(channel,i));if(position>(int)(rate*.1)+plugin->getLatencySamples())liveNoiseSilence=std::max(liveNoiseSilence,std::abs(audio.getSample(channel,i)));}}
+        noiseParameter->setValueNotifyingHost(0);
         auto* run=new juce::DynamicObject;run->setProperty("sample_rate",rate);run->setProperty("latency_samples",plugin->getLatencySamples());runs.add(juce::var(run));
         plugin->releaseResources();
     }
@@ -163,12 +179,17 @@ juce::var validatePlugin(const juce::File& file,const juce::File& snapshot,const
         writeSnapshot(snapshot,image);
         report->setProperty("editor_created",true);
     }
-    report->setProperty("finite_output",finite);report->setProperty("runs",runs);report->setProperty("passed",finite&&saved.getSize()>0);
+    report->setProperty("finite_output",finite);report->setProperty("live_noise_only_zero_reduction_error",liveNoiseSilence);report->setProperty("runs",runs);report->setProperty("passed",finite&&saved.getSize()>0&&liveNoiseSilence<.00002f);
     return juce::var(report);
 }
 
 juce::var testFileDeck(const juce::File& source,const juce::File& output,const juce::File& snapshot,int skin) {
     NoiseBaseProcessor processor;processor.standaloneMode.store(true);
+    auto legacy=processor.params.copyState();legacy.removeChild(legacy.getChildWithProperty("id","noiseOnly"),nullptr);
+    juce::MemoryBlock legacyState;juce::AudioProcessor::copyXmlToBinary(*legacy.createXml(),legacyState);
+    processor.params.getParameter("noiseOnly")->setValueNotifyingHost(1);processor.setStateInformation(legacyState.getData(),(int)legacyState.getSize());
+    bool legacyClean=processor.params.getRawParameterValue("noiseOnly")->load()<.5f;
+    if(!legacyClean)throw std::runtime_error("An older preset did not restore clean output.");
     processor.params.getParameter("skin")->setValueNotifyingHost(skin*.5f);
     processor.prepareToPlay(48000,512);
     NoiseBaseEditor editor(processor);
@@ -235,6 +256,16 @@ juce::var testFileDeck(const juce::File& source,const juce::File& output,const j
     if(output.existsAsFile())throw std::runtime_error("Smoke test output already exists.");
     processor.saveRecording(output);waitForJob();
     if(!output.existsAsFile())throw std::runtime_error(processor.getStatus().toStdString());
+    auto noiseFile=output.getSiblingFile(output.getFileNameWithoutExtension()+"-noise-base.wav");
+    if(noiseFile.existsAsFile())throw std::runtime_error("Noise export test output already exists.");
+    processor.params.getParameter("noiseOnly")->setValueNotifyingHost(1);processor.saveRecording(noiseFile);waitForJob();
+    std::unique_ptr<juce::AudioFormatReader> cleanReader(formats.createReaderFor(output)),noiseReader(formats.createReaderFor(noiseFile));
+    if(!cleanReader||!noiseReader||noiseReader->lengthInSamples!=reference->lengthInSamples||noiseReader->sampleRate!=reference->sampleRate||noiseReader->numChannels!=reference->numChannels)throw std::runtime_error("Noise export changed file timing or layout.");
+    int channels=(int)reference->numChannels;juce::AudioBuffer<float> original(channels,8192),clean(channels,8192),noise(channels,8192);float reconstruction=0;
+    for(juce::int64 start=0;start<reference->lengthInSamples;start+=8192){int count=(int)std::min<juce::int64>(8192,reference->lengthInSamples-start);reference->read(&original,0,count,start,true,true);cleanReader->read(&clean,0,count,start,true,true);noiseReader->read(&noise,0,count,start,true,true);for(int channel=0;channel<channels;++channel)for(int i=0;i<count;++i)reconstruction=std::max(reconstruction,std::abs(clean.getSample(channel,i)+noise.getSample(channel,i)-original.getSample(channel,i)));}
+    float tolerance=(float)(2.0/std::pow(2.0,std::max(16,(int)reference->bitsPerSample)-1)+.000001);
+    if(reconstruction>tolerance)throw std::runtime_error("Noise and clean exports did not reconstruct the original.");
+    bool noiseExportSaved=true;
     juce::MessageManager::getInstance()->runDispatchLoopUntil(100);
     auto image=editor.createComponentSnapshot(editor.getLocalBounds(),true,1.0f);
     writeSnapshot(snapshot,image);
@@ -243,6 +274,7 @@ juce::var testFileDeck(const juce::File& source,const juce::File& output,const j
     report->setProperty("preview_non_silent",energy>0);report->setProperty("pause_and_stop",paused);report->setProperty("export_created",output.existsAsFile());
     report->setProperty("sample_exact_loop_junction",exactLoop);report->setProperty("return_to_start_keeps_pause",rewindPaused);report->setProperty("return_to_start_keeps_play",rewindPlaying);
     report->setProperty("loop_repeats_past_eof",repeats);report->setProperty("loop_off_stops_at_eof",eofStops);
+    report->setProperty("legacy_preset_restores_clean",legacyClean);report->setProperty("noise_export_preserves_timing_layout",noiseExportSaved);report->setProperty("clean_plus_noise_export_error",reconstruction);
     report->setProperty("status",processor.getStatus());return juce::var(report);
 }
 
@@ -255,10 +287,18 @@ public:
         auto args=juce::StringArray::fromTokens(commandLine,true);
         for(auto& item:args)item=item.unquoted();
         auto option=[&](const juce::String& name)->juce::String {int i=args.indexOf(name);return i>=0&&i+1<args.size()?args[i+1]:juce::String{};};
-        if(args.contains("--self-test")||args.contains("--process")||args.contains("--render-ui")||args.contains("--validate-plugin")||args.contains("--ui-smoke")||args.contains("--check-updates")) {
+        if(args.contains("--self-test")||args.contains("--process")||args.contains("--render-ui")||args.contains("--validate-plugin")||args.contains("--ui-smoke")||args.contains("--check-updates")||args.contains("--theme-test")) {
             try {
                 juce::var report;
-                if(args.contains("--check-updates")) {
+                if(args.contains("--theme-test")){
+                    report=runWindowThemeTests();
+                    if(!option("--icon-preview").isEmpty()){
+                        juce::Image sheet(juce::Image::ARGB,440,180,true);
+                        {juce::Graphics graphics(sheet);for(int row=0;row<2;++row){graphics.setColour(OsTheme::background(row==1));graphics.fillRect(0,row*90,440,90);int x=16;for(int size:{16,32,48,64}){graphics.drawImage(RasterAssets::get().icon,juce::Rectangle<float>{(float)x,(float)(row*90+10),(float)size,(float)size},juce::RectanglePlacement::centred);x+=size+38;}}}
+                        writeSnapshot(juce::File(option("--icon-preview")),sheet);
+                    }
+                }
+                else if(args.contains("--check-updates")) {
                     NoiseBaseUpdater updater;bool finished=false;
                     updater.request(false,[&](juce::var result){report=result;finished=true;});
                     auto deadline=juce::Time::getMillisecondCounterHiRes()+40000;
@@ -275,15 +315,17 @@ public:
                     auto analysis=analyseRecording(juce::File(args[i+1]));
                     juce::File output(args[i+2]);
                     if(output.existsAsFile())throw std::runtime_error("Output exists; choose a new copy.");
-                    exportRecording(analysis,output,14,.8f,1,0);
+                    exportRecording(analysis,output,14,.8f,1,0,nullptr,nullptr,args.contains("--noise-only"));
                     auto* result=new juce::DynamicObject;result->setProperty("passed",true);result->setProperty("samples",(double)analysis.frames);
                     result->setProperty("sample_rate",analysis.sampleRate);result->setProperty("channels",analysis.channels);
                     result->setProperty("noise_reference_seconds",analysis.profile.quietSeconds);result->setProperty("estimated",analysis.profile.estimated);
+                    result->setProperty("noise_only",args.contains("--noise-only"));
                     result->setProperty("output",output.getFullPathName());report=juce::var(result);
                 } else if(args.contains("--render-ui")) {
                     NoiseBaseProcessor processor;processor.standaloneMode.store(!args.contains("--plugin-layout"));
                     int skin=juce::jlimit(0,2,option("--skin").getIntValue());
                     processor.params.getParameter("skin")->setValueNotifyingHost(skin*.5f);
+                    processor.params.getParameter("noiseOnly")->setValueNotifyingHost(args.contains("--noise-only")?1:0);
                     NoiseBaseEditor editor(processor);
                     // Parameter attachments are updated before the snapshot is painted.
                     juce::MessageManager::getInstance()->runDispatchLoopUntil(60);
@@ -300,10 +342,10 @@ public:
             }
             quit();return;
         }
-        window=std::make_unique<AppWindow>();
+        theme=std::make_unique<OsTheme>();window=std::make_unique<AppWindow>();
     }
-    void shutdown() override {window.reset();}
+    void shutdown() override {window.reset();theme.reset();}
     void systemRequestedQuit() override {quit();}
-private:std::unique_ptr<AppWindow> window;
+private:std::unique_ptr<OsTheme> theme;std::unique_ptr<AppWindow> window;
 };
 START_JUCE_APPLICATION(NoiseBaseApplication)

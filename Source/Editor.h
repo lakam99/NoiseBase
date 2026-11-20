@@ -4,6 +4,7 @@
 #include "VfdDisplay.h"
 
 struct HardwareLook final : juce::LookAndFeel_V4 {
+    HardwareLook();
     int skin=0;
     juce::Colour panel() const;
     juce::Colour ink() const;
@@ -14,7 +15,7 @@ struct HardwareLook final : juce::LookAndFeel_V4 {
     void drawButtonText(juce::Graphics&,juce::TextButton&,bool,bool) override;
 };
 
-class NoiseBaseEditor final : public juce::AudioProcessorEditor,public juce::FileDragAndDropTarget,private juce::Timer {
+class NoiseBaseEditor final : public juce::AudioProcessorEditor,public juce::FileDragAndDropTarget,private juce::Timer,private juce::DarkModeSettingListener {
 public:
     explicit NoiseBaseEditor(NoiseBaseProcessor&);
     ~NoiseBaseEditor() override;
@@ -27,19 +28,20 @@ public:
     void setUpdateBusy(bool busy,bool downloading=false) {updateBusy=busy;downloadingUpdate=downloading;updates.setEnabled(!busy);repaint();}
 private:
     void timerCallback() override;
+    void darkModeSettingChanged() override;
     void drawMeter(juce::Graphics&,juce::Rectangle<float>,const juce::String&,float,bool);
     void openFile();
     void exportFile();
     NoiseBaseProcessor& processor;
     HardwareLook look;
     juce::Slider reduction,preserve,mix,output,skin;
-    juce::ToggleButton automatic{"AUTO LEARN"},bypass{"BYPASS"};
+    juce::ToggleButton automatic{"AUTO LEARN"},bypass{"BYPASS"},noiseOnly{"NOISE ONLY"};
     juce::TextButton reset{"LEARN"},load{"LOAD TAPE"},scan{"SCAN"},play,stop,loop,beginning,save{"PRINT WAV"},devices{"PATCH BAY"};
     juce::TextButton updates{"UPDATES"};
     std::array<VfdLine,4> displayLines;
     bool updateBusy=false,downloadingUpdate=false;
     std::vector<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>> sliders;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> autoAttachment,bypassAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> autoAttachment,bypassAttachment,noiseAttachment;
     std::unique_ptr<juce::FileChooser> chooser;
     float inputNeedle=0,outputNeedle=0,reductionNeedle=0;
 };

@@ -6,6 +6,7 @@ void engraved(juce::Graphics& g,const juce::String& text,juce::Rectangle<float> 
     g.setFont(labelFont(size));g.setColour(ink);g.drawText(text,r,juce::Justification::centred,false);
 }
 }
+HardwareLook::HardwareLook(){setColourScheme(juce::Desktop::getInstance().isDarkModeActive()?getDarkColourScheme():getLightColourScheme());}
 juce::Colour HardwareLook::panel() const {return skin==0?juce::Colour(0xffd4cbb6):skin==1?juce::Colour(0xff282b2c):juce::Colour(0xffb9a17b);}
 juce::Colour HardwareLook::ink() const {return skin==1?juce::Colour(0xffd6d2bd):juce::Colour(0xff292a25);}
 juce::Colour HardwareLook::accent() const {return skin==1?juce::Colour(0xffc84e3b):juce::Colour(0xff7b382a);}
@@ -25,10 +26,10 @@ void HardwareLook::drawToggleButton(juce::Graphics& g,juce::ToggleButton& b,bool
     auto r=b.getLocalBounds().toFloat();auto art=r.removeFromLeft(43).reduced(5,0);
     g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
     g.drawImage(RasterAssets::get().switches[b.getToggleState()?0:1],art,juce::RectanglePlacement::stretchToFit);
-    bool automatic=b.getButtonText().contains("AUTO");g.setFont(labelFont(10));
+    bool automatic=b.getButtonText().contains("AUTO"),noise=b.getButtonText()=="NOISE ONLY";g.setFont(labelFont(10));
     auto text=r.reduced(4,1);auto top=text.removeFromTop(15);
-    g.setColour(ink().withAlpha(b.getToggleState()?1.0f:.40f));g.drawText(automatic?"AUTO":"BYPASS",top,juce::Justification::centredLeft);
-    g.setColour(ink().withAlpha(b.getToggleState()?.40f:1.0f));g.drawText(automatic?"HOLD":"IN",text,juce::Justification::centredLeft);
+    g.setColour(ink().withAlpha(b.getToggleState()?1.0f:.40f));g.drawText(automatic?"AUTO":noise?"NOISE ONLY":"BYPASS",top,juce::Justification::centredLeft);
+    g.setColour(ink().withAlpha(b.getToggleState()?.40f:1.0f));g.drawText(automatic?"HOLD":noise?"CLEAN":"IN",text,juce::Justification::centredLeft);
 }
 void HardwareLook::drawButtonBackground(juce::Graphics& g,juce::Button& b,const juce::Colour&,bool,bool down) {
     auto r=b.getLocalBounds().toFloat().reduced(1);
@@ -50,7 +51,7 @@ void HardwareLook::drawButtonText(juce::Graphics& g,juce::TextButton& b,bool,boo
 }
 
 NoiseBaseEditor::NoiseBaseEditor(NoiseBaseProcessor& p):AudioProcessorEditor(p),processor(p) {
-    setLookAndFeel(&look);setOpaque(true);
+    setLookAndFeel(&look);setOpaque(true);juce::Desktop::getInstance().addDarkModeSettingListener(this);
     for(auto* control:{&reduction,&preserve,&mix,&output,&skin}) {control->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);control->setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);control->setRotaryParameters(juce::MathConstants<float>::pi*1.23f,juce::MathConstants<float>::pi*2.77f,true);addAndMakeVisible(control);}
     sliders.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(p.params,"reduction",reduction));
     sliders.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(p.params,"preserve",preserve));
@@ -61,9 +62,11 @@ NoiseBaseEditor::NoiseBaseEditor(NoiseBaseProcessor& p):AudioProcessorEditor(p),
     // All changing control values live in the fluorescent display.
     reduction.textFromValueFunction=[](double v){return juce::String(v,1)+" dB";};output.textFromValueFunction=[](double v){return juce::String(v,1)+" dB";};
     preserve.textFromValueFunction=[](double v){return juce::String(v,0)+" %";};mix.textFromValueFunction=[](double v){return juce::String(v,0)+" % clean";};
-    for(auto* c:{(juce::Component*)&automatic,(juce::Component*)&bypass,(juce::Component*)&reset})addAndMakeVisible(c);
+    for(auto* c:{(juce::Component*)&automatic,(juce::Component*)&bypass,(juce::Component*)&noiseOnly,(juce::Component*)&reset})addAndMakeVisible(c);
     autoAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(p.params,"auto",automatic);
     bypassAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(p.params,"bypass",bypass);
+    noiseAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(p.params,"noiseOnly",noiseOnly);
+    noiseOnly.setTooltip("Listen to or export the estimated removed noise. Speech can leak through where it overlaps noise; bypass restores the original.");
     reset.onClick=[this]{processor.params.getParameter("auto")->setValueNotifyingHost(1);processor.resetProfile();};
     if(processor.standaloneMode.load()) {
         for(auto* c:{&load,&scan,&play,&stop,&loop,&beginning,&save,&devices})addAndMakeVisible(c);
@@ -77,10 +80,11 @@ NoiseBaseEditor::NoiseBaseEditor(NoiseBaseProcessor& p):AudioProcessorEditor(p),
         loop.onClick=[this]{processor.setLooping(loop.getToggleState());};beginning.onClick=[this]{processor.returnToStart();};
         save.onClick=[this]{exportFile();};devices.onClick=[this]{if(onDevices)onDevices();};
     }
-    reduction.setTooltip("Maximum noise reduction, 0 to 24 dB");preserve.setTooltip("Protect quieter speech detail");mix.setTooltip("Dry / denoised blend");output.setTooltip("Output trim, -12 to +12 dB");skin.setTooltip("Ivory / Graphite / Walnut faceplates");
+    reduction.setTooltip("Maximum noise reduction, 0 to 24 dB");preserve.setTooltip("Protect quieter speech detail");mix.setTooltip("Dry / denoised blend; in noise-only mode this scales the removed-noise component");output.setTooltip("Output trim, -12 to +12 dB");skin.setTooltip("Ivory / Graphite / Walnut faceplates");
     setSize(960,processor.standaloneMode.load()?668:540);startTimerHz(30);
 }
-NoiseBaseEditor::~NoiseBaseEditor(){stopTimer();setLookAndFeel(nullptr);}
+NoiseBaseEditor::~NoiseBaseEditor(){stopTimer();if(auto* desktop=juce::Desktop::getInstanceWithoutCreating())desktop->removeDarkModeSettingListener(this);setLookAndFeel(nullptr);}
+void NoiseBaseEditor::darkModeSettingChanged(){look.setColourScheme(juce::Desktop::getInstance().isDarkModeActive()?HardwareLook::getDarkColourScheme():HardwareLook::getLightColourScheme());sendLookAndFeelChange();repaint();}
 void NoiseBaseEditor::drawMeter(juce::Graphics& g,juce::Rectangle<float> r,const juce::String& label,float value,bool reductionMeter) {
     const auto& art=RasterAssets::get();
     g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
@@ -135,6 +139,7 @@ void NoiseBaseEditor::paint(juce::Graphics& g) {
     if(!processor.detectorAvailable.load())live="SPEECH DETECTOR  /  warming up";
     if(processor.detectorFailed.load())live="DETECTOR UNAVAILABLE  /  restore the runtime files";
     bool standalone=processor.standaloneMode.load();
+    juce::String routing=bypass.getToggleState()?"ORIGINAL / BYPASS":noiseOnly.getToggleState()?"NOISE ONLY":"CLEAN";
     drawVfdHousing(g,{64,485,832,standalone?92.0f:40.0f});
     juce::String controls=juce::StringArray{"IVORY","GRAPHITE","WALNUT"}[look.skin]+"  RED "+juce::String(reduction.getValue(),1)+" DB  VOICE "+juce::String(preserve.getValue(),1)+"%  MIX "+juce::String(mix.getValue(),1)+"%  OUT "+(output.getValue()>=0?"+":"")+juce::String(output.getValue(),1)+" DB";
     if(standalone) {
@@ -143,19 +148,19 @@ void NoiseBaseEditor::paint(juce::Graphics& g) {
         else if(updateBusy)live=downloadingUpdate?"DOWNLOADING AND VERIFYING UPDATE":"CHECKING GITHUB RELEASES";
         else if(processor.fileMode.load())live=(processor.isPlaying()?"PLAY  | ":processor.playbackPosition()>=processor.playbackDuration()-.001?"END   | ":processor.playbackPosition()>0?"PAUSE | ":"STOP  | ")+live+(processor.isLooping()?" | LOOP ON":"");
         displayLines[0].draw(g,controls,{82,495,796,17},1.65f,false);
-        displayLines[1].draw(g,live,{82,518,796,17});
+        displayLines[1].draw(g,routing+" | "+live,{82,518,796,17});
         displayLines[2].draw(g,processor.fileMode.load()?processor.getFileName():"NO TAPE LOADED",{82,543,558,17});
         auto time=[](double value){int seconds=(int)std::max(0.0,value);return juce::String(seconds/60).paddedLeft('0',2)+":"+juce::String(seconds%60).paddedLeft('0',2);};
         displayLines[3].draw(g,time(processor.playbackPosition())+" / "+time(processor.playbackDuration()),{683,543,195,17},1.65f,false);
     } else {
         displayLines[0].draw(g,controls,{80,491,800,14},1.35f,false);
-        displayLines[1].draw(g,live,{80,507,800,14},1.35f);
+        displayLines[1].draw(g,routing+" | "+live,{80,507,800,14},1.35f);
     }
 }
 void NoiseBaseEditor::resized() {
     skin.setBounds(85,37,74,63);
     for(int i=0;i<4;++i){juce::Slider* controls[]{&reduction,&preserve,&mix,&output};controls[i]->setBounds(78+i*222,337,138,122);}
-    automatic.setBounds(68,270,220,32);bypass.setBounds(578,270,230,32);reset.setBounds(432,274,96,25);
+    automatic.setBounds(68,270,170,32);reset.setBounds(310,274,96,25);noiseOnly.setBounds(466,270,200,32);bypass.setBounds(734,270,150,32);
     if(processor.standaloneMode.load()) {
         load.setBounds(72,596,118,32);scan.setBounds(198,596,80,32);
         beginning.setBounds(306,592,52,40);play.setBounds(366,592,52,40);stop.setBounds(426,592,52,40);loop.setBounds(486,592,52,40);
@@ -177,6 +182,7 @@ void NoiseBaseEditor::openFile() {
     chooser->launchAsync(juce::FileBrowserComponent::openMode|juce::FileBrowserComponent::canSelectFiles,[safe=juce::Component::SafePointer<NoiseBaseEditor>(this)](const juce::FileChooser& c){if(safe && c.getResult().existsAsFile())safe->processor.loadRecording(c.getResult());});
 }
 void NoiseBaseEditor::exportFile() {
-    chooser=std::make_unique<juce::FileChooser>("Print denoised WAV",juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile("NoiseBase-denoised.wav"),"*.wav");
+    bool original=bypass.getToggleState(),noise=noiseOnly.getToggleState()&&!original;
+    chooser=std::make_unique<juce::FileChooser>(original?"Print original WAV":noise?"Print estimated noise WAV":"Print denoised WAV",juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile(original?"NoiseBase-original.wav":noise?"NoiseBase-noise-base.wav":"NoiseBase-denoised.wav"),"*.wav");
     chooser->launchAsync(juce::FileBrowserComponent::saveMode|juce::FileBrowserComponent::canSelectFiles|juce::FileBrowserComponent::warnAboutOverwriting,[safe=juce::Component::SafePointer<NoiseBaseEditor>(this)](const juce::FileChooser& c){if(safe && c.getResult()!=juce::File{})safe->processor.saveRecording(c.getResult().withFileExtension("wav"));});
 }

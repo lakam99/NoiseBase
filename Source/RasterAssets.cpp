@@ -57,6 +57,7 @@ std::pair<int,int> longestPaperRun(const juce::Image& image,bool vertical,int fi
 
 const RasterAssets& RasterAssets::get(){static const RasterAssets assets;return assets;}
 RasterAssets::RasterAssets() {
+    icon=png(BinaryData::appicon_png,BinaryData::appicon_pngSize);
     panels={png(BinaryData::ivory_png,BinaryData::ivory_pngSize),png(BinaryData::graphite_png,BinaryData::graphite_pngSize),png(BinaryData::walnut_png,BinaryData::walnut_pngSize)};
     auto rawKnob=png(BinaryData::knob_png,BinaryData::knob_pngSize);knob=rawKnob.getClippedImage(bodyBounds(rawKnob));
     auto rawMeter=png(BinaryData::meter_png,BinaryData::meter_pngSize);meter=rawMeter.getClippedImage(bodyBounds(rawMeter));

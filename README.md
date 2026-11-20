@@ -14,6 +14,7 @@ The standalone application scans an entire recording before preview or export. T
 
 - Automatic noise profiling with speech-aware learning.
 - Reduction, voice detail, dry/clean blend, output trim, and latency-aligned bypass.
+- Noise-only monitoring in the VST3 and standalone app, plus noise-base WAV export.
 - Mono and stereo processing with a shared stereo mask.
 - Standalone file loading, automatic scanning, playback, and WAV export.
 - Classic cyan VFD for live values, filename, tape status, progress, and time.
@@ -34,6 +35,16 @@ The installer also installs the VST3. Alternatively, copy the entire `VST3/Noise
 The application is installed at `%LOCALAPPDATA%/Programs/NoiseBase`; the VST3 goes to `%LOCALAPPDATA%/Programs/Common/VST3/NoiseBase.vst3`. Add the latter's parent folder to your DAW's plug-in locations if necessary. VST3 backups are retained outside that scan folder. The installer verifies payload hashes, protects unowned directories, refuses downgrades and in-use files, and rolls back failed file swaps. See the [Windows user guide](docs/Windows-user-guide.txt).
 
 The standalone tape deck uses icon buttons. **Play/pause** toggles playback, **stop** stops and rewinds, **return to beginning** jumps to zero while preserving play or pause, and **loop** repeats the recording during preview. A green jewel and `LOOP ON` in the VFD indicate that repeat is enabled. Disabling loop finishes the current pass. Exports always process the original duration once.
+
+## Noise-only output and noise-base export
+
+Flip **NOISE ONLY / CLEAN** to NOISE ONLY to hear the estimated removed noise instead of the cleaned dialogue. This works during real-time VST3 playback and is automatable/saved in the host. In the standalone app, **PRINT WAV** exports whichever output is selected; the noise default filename is `NoiseBase-noise-base.wav`. Timing, channel layout and supported WAV format/metadata are preserved.
+
+This is the denoiser's removed-noise estimate. It can contain dialogue bleed where speech and noise overlap; it does not synthesize replacement ambience or guarantee a speech-free stem. Let AUTO learn a reliable noise floor from a pause, then use HOLD if desired. More VOICE DETAIL protects speech from removal. MIX controls how much removed noise is output; zero MIX or zero REDUCTION gives silence in noise-only mode. Bypass overrides the mode and restores the original track, including dialogue.
+
+## Window appearance
+
+The generated cyan/glass icon is embedded in the app, taskbar window and Windows module resources. The standalone's native title bar and utility-window colors follow Windows app light/dark mode while keeping the selected Ivory, Graphite or Walnut faceplate. Host-owned VST3 window chrome remains the DAW's responsibility.
 
 ## Automatic updates
 

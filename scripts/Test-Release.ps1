@@ -11,6 +11,7 @@ function Invoke-Check([string[]]$Arguments,[string]$Report) {
     if ($process.ExitCode -ne 0 -or -not (Get-Content -LiteralPath $Report -Raw | ConvertFrom-Json).passed) { throw ('Native verification failed: ' + [IO.Path]::GetFileName($Report)) }
 }
 Invoke-Check @('--self-test') (Join-Path $folder 'engine.json')
+Invoke-Check @('--theme-test') (Join-Path $folder 'window-theme-icon.json')
 Invoke-Check @('--validate-plugin',$plugin,'--snapshot',(Join-Path $Build 'host-wrapper.png')) (Join-Path $folder 'vst3.json')
 $fixture=Join-Path $Build 'fixture.wav'
 @'
@@ -33,6 +34,8 @@ foreach ($skin in 0..2) {
     [IO.File]::WriteAllBytes((Join-Path $folder ($name+'.png')),[Text.Encoding]::ASCII.GetBytes('obsolete preview'))
     Invoke-Check @('--render-ui',(Join-Path $folder ($name+'.png')),'--skin',"$skin") (Join-Path $folder ($name+'.json'))
     Invoke-Check @('--render-ui',(Join-Path $folder ($name+'-vst3.png')),'--plugin-layout','--skin',"$skin") (Join-Path $folder ($name+'-vst3.json'))
+    Invoke-Check @('--render-ui',(Join-Path $folder ($name+'-noise-only.png')),'--noise-only','--skin',"$skin") (Join-Path $folder ($name+'-noise-only.json'))
+    Invoke-Check @('--render-ui',(Join-Path $folder ($name+'-vst3-noise-only.png')),'--plugin-layout','--noise-only','--skin',"$skin") (Join-Path $folder ($name+'-vst3-noise-only.json'))
 }
 @'
 from pathlib import Path

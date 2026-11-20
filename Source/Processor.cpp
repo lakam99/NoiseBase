@@ -19,6 +19,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout NoiseBaseProcessor::layout()
     result.add(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"auto",1},"Automatic noise learning",true));
     result.add(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"bypass",1},"Bypass",false));
     result.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"skin",1},"Faceplate",juce::StringArray{"Ivory","Graphite","Walnut"},0));
+    // Append to retain the existing parameter order and IDs in saved projects.
+    result.add(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"noiseOnly",1},"Noise only",false));
     return result;
 }
 NoiseBaseProcessor::NoiseBaseProcessor():AudioProcessor(BusesProperties().withInput("Input",juce::AudioChannelSet::stereo(),true)
@@ -54,13 +56,21 @@ void NoiseBaseProcessor::processAudio(juce::AudioBuffer<float>& buffer,bool forc
     voice.push(buffer);
     if(isNonRealtime())voice.waitForPending();
     engine.process(buffer,voice.probability.load(),value("reduction"),value("preserve")*.01f,
-        value("mix")*.01f,value("output"),value("auto")>.5f,forceBypass||value("bypass")>.5f);
+        value("mix")*.01f,value("output"),value("auto")>.5f,forceBypass||value("bypass")>.5f,value("noiseOnly")>.5f);
     inputLevel.store(engine.inputMeter());outputLevel.store(engine.outputMeter());reductionLevel.store(engine.reductionMeter());
     quietSeconds.store((float)engine.quietTime());detectorAvailable.store(voice.available.load());detectorFailed.store(voice.failed.load());
 }
 juce::AudioProcessorEditor* NoiseBaseProcessor::createEditor(){return new NoiseBaseEditor(*this);}
 void NoiseBaseProcessor::getStateInformation(juce::MemoryBlock& dest) {auto xml=params.copyState().createXml();copyXmlToBinary(*xml,dest);}
-void NoiseBaseProcessor::setStateInformation(const void* data,int size) {if(auto xml=getXmlFromBinary(data,size)) if(xml->hasTagName(params.state.getType())) params.replaceState(juce::ValueTree::fromXml(*xml));}
+void NoiseBaseProcessor::setStateInformation(const void* data,int size) {
+    if(auto xml=getXmlFromBinary(data,size))if(xml->hasTagName(params.state.getType())){
+        auto state=juce::ValueTree::fromXml(*xml);
+        if(!state.getChildWithProperty("id","noiseOnly").isValid()){
+            juce::ValueTree mode("PARAM");mode.setProperty("id","noiseOnly",nullptr);mode.setProperty("value",0.0f,nullptr);state.appendChild(mode,nullptr);
+        }
+        params.replaceState(state);
+    }
+}
 void NoiseBaseProcessor::setStatus(const juce::String& text){const juce::ScopedLock lock(statusLock);status=text;}
 juce::String NoiseBaseProcessor::getStatus() const {const juce::ScopedLock lock(statusLock);return status;}
 juce::String NoiseBaseProcessor::getFileName() const {const juce::ScopedLock lock(statusLock);return fileName;}
@@ -94,12 +104,13 @@ void NoiseBaseProcessor::scanRecording() {
 }
 void NoiseBaseProcessor::saveRecording(const juce::File& output) {
     if(!analysed.load() || busy.exchange(true))return;
-    cancel.store(false);jobProgress.store(0);setStatus("PRINTING  /  original remains untouched");
+    bool bypassed=value("bypass")>.5f,noiseOutput=value("noiseOnly")>.5f&&!bypassed;
+    cancel.store(false);jobProgress.store(0);setStatus(noiseOutput?"PRINTING NOISE BASE  /  original remains untouched":bypassed?"PRINTING ORIGINAL  /  BYPASS":"PRINTING CLEAN  /  original remains untouched");
     auto fileAnalysis=std::make_shared<FileAnalysis>();
     {const juce::ScopedLock lock(analysisLock);*fileAnalysis=*analysis;}
-    float cap=value("bypass")>.5f?0:value("reduction"),pres=value("preserve")*.01f,blend=value("mix")*.01f,level=value("output");
-    jobs.addJob(new FunctionJob([this,fileAnalysis,output,cap,pres,blend,level]{
-        try{exportRecording(*fileAnalysis,output,cap,pres,blend,level,&jobProgress,&cancel);setStatus("PRINT COMPLETE  /  "+output.getFileName());}
+    float cap=bypassed?0:value("reduction"),pres=value("preserve")*.01f,blend=value("mix")*.01f,level=bypassed?0:value("output");
+    jobs.addJob(new FunctionJob([this,fileAnalysis,output,cap,pres,blend,level,noiseOutput]{
+        try{exportRecording(*fileAnalysis,output,cap,pres,blend,level,&jobProgress,&cancel,noiseOutput);setStatus((noiseOutput?"NOISE BASE PRINTED  /  ":"PRINT COMPLETE  /  ")+output.getFileName());}
         catch(const std::exception& e){setStatus(juce::String("PRINT: ")+e.what());}
         busy.store(false);
     }),true);

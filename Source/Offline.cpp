@@ -95,7 +95,7 @@ FileAnalysis analyseRecording(const juce::File& file,std::atomic<float>* progres
     return result;
 }
 
-void exportRecording(const FileAnalysis& analysis,const juce::File& destination,float reduction,float preserve,float mix,float outputDb,std::atomic<float>* progress,std::atomic<bool>* cancel) {
+void exportRecording(const FileAnalysis& analysis,const juce::File& destination,float reduction,float preserve,float mix,float outputDb,std::atomic<float>* progress,std::atomic<bool>* cancel,bool noiseOnly) {
     if(destination==analysis.source) throw std::runtime_error("Choose a new file; the source cannot be overwritten.");
     auto reader=openReader(analysis.source);
     juce::TemporaryFile temp(destination);
@@ -112,7 +112,7 @@ void exportRecording(const FileAnalysis& analysis,const juce::File& destination,
     int latency=engine.latency();
     juce::AudioBuffer<float> block(analysis.channels,512);
     // Prime parameter ramps with silence before the file starts.
-    for(int p=0;p<latency;p+=512) { block.clear(); engine.process(block,0,reduction,preserve,mix,outputDb,false,false); }
+    for(int p=0;p<latency;p+=512) { block.clear(); engine.process(block,0,reduction,preserve,mix,outputDb,false,false,noiseOnly); }
     int64_t rendered=0, written=0;
     while(rendered<analysis.frames+latency) {
         checkCancel(cancel);
@@ -120,7 +120,7 @@ void exportRecording(const FileAnalysis& analysis,const juce::File& destination,
         block.setSize(analysis.channels,count,false,false,true); block.clear();
         if(rendered<analysis.frames) reader->read(&block,0,(int)std::min<int64_t>(count,analysis.frames-rendered),rendered,true,true);
         int idx=juce::jlimit(0,(int)analysis.voice.size()-1,(int)(rendered/analysis.sampleRate/.032));
-        engine.process(block,analysis.voice[(size_t)idx],reduction,preserve,mix,outputDb,false,false);
+        engine.process(block,analysis.voice[(size_t)idx],reduction,preserve,mix,outputDb,false,false,noiseOnly);
         int skip=(int)std::max<int64_t>(0,latency-rendered);
         if(skip<count) {
             int available=(int)std::min<int64_t>(count-skip,analysis.frames-written);
@@ -170,5 +170,6 @@ juce::var runEngineTests() {
         bool ok=error<.00002f&&bypassError<.00002f&&stereoError<.00002f;
         row->setProperty("passed",ok); passed &= ok; results.add(juce::var(row));
     }
-    report->setProperty("passed",passed); report->setProperty("unity_latency_tests",results); return juce::var(report);
+    auto noiseTests=runNoiseOutputTests();passed &= (bool)noiseTests["passed"];
+    report->setProperty("passed",passed); report->setProperty("unity_latency_tests",results);report->setProperty("noise_only",noiseTests); return juce::var(report);
 }

@@ -14,5 +14,6 @@ struct FileAnalysis {
 
 FileAnalysis analyseRecording(const juce::File&,std::atomic<float>* progress=nullptr,std::atomic<bool>* cancel=nullptr);
 void exportRecording(const FileAnalysis&,const juce::File& output,float reduction,float preserve,
-                     float mix,float outputDb,std::atomic<float>* progress=nullptr,std::atomic<bool>* cancel=nullptr);
+                     float mix,float outputDb,std::atomic<float>* progress=nullptr,std::atomic<bool>* cancel=nullptr,bool noiseOnly=false);
 juce::var runEngineTests();
+juce::var runNoiseOutputTests();

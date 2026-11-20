@@ -16,7 +16,7 @@ public:
     void resetNoise();
     bool setProfile(const NoiseProfile&);
     void process(juce::AudioBuffer<float>&, float speech, float reductionDb,
-                 float preserve, float mix, float outputDb, bool autoLearn, bool bypass);
+                 float preserve, float mix, float outputDb, bool autoLearn, bool bypass, bool noiseOnly=false);
     int latency() const { return size; }
     int fftSize() const { return size; }
     int hopSize() const { return hop; }
@@ -34,5 +34,5 @@ private:
     std::vector<std::vector<float>> input, output, fftData;
     bool profileReady = false;
     float meterInput = 0, meterOutput = 0, meterReduction = 0;
-    juce::SmoothedValue<float> mixSmooth, outputSmooth, bypassSmooth;
+    juce::SmoothedValue<float> mixSmooth, outputSmooth, bypassSmooth, noiseOnlySmooth;
 };
