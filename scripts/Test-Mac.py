@@ -15,7 +15,7 @@ def check(name,*args):
     command=[str(app),*map(str,args),'--report',str(report)]
     try:subprocess.run(command,check=True,timeout=120)
     except subprocess.CalledProcessError:
-        subprocess.run(['lldb','--batch','-o','run','-o','thread backtrace all','--',*command],timeout=180)
+        subprocess.run(['lldb','--batch','-o','run','-k','thread backtrace all','--',*command],timeout=180)
         raise
     result=json.loads(report.read_text())
     assert result.get('passed'),result
