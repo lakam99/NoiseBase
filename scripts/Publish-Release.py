@@ -15,13 +15,14 @@ root=Path(__file__).resolve().parent.parent
 folder=Path(args.directory).resolve()
 version=args.tag[1:]
 names=[f'NoiseBase-{version}-Windows-x64.zip',f'NoiseBase-{version}-source.zip','SHA256SUMS.txt']
+if tuple(map(int,version.split('.')))>=(1,5,1):names.insert(-1,f'NoiseBase-{version}-macOS-arm64.zip')
 expected={}
 for name in names:
     path=folder/name
     with path.open('rb') as stream:
         expected[name]={'sha256':hashlib.file_digest(stream,'sha256').hexdigest(),'size':path.stat().st_size}
 lines=(folder/'SHA256SUMS.txt').read_text().splitlines()
-assert set(lines)=={f"{expected[name]['sha256']}  {name}" for name in names[:2]}
+assert set(lines)=={f"{expected[name]['sha256']}  {name}" for name in names[:-1]}
 
 def gh(*arguments,check=True):
     result=subprocess.run(['gh',*arguments],capture_output=True,text=True)

@@ -1,8 +1,8 @@
 # NoiseBase
 
-Automatic dialogue denoising for Windows, available as a VST3 effect and a standalone application.
+Automatic dialogue denoising and procedural ambience for Windows x64 and Apple Silicon macOS, available as a VST3 effect and a standalone application.
 
-[Download the latest NoiseBase release for Windows x64](https://github.com/lakam99/NoiseBase/releases/latest)
+[Download the latest NoiseBase release](https://github.com/lakam99/NoiseBase/releases/latest)
 
 ![NoiseBase Walnut interface](docs/images/walnut.png)
 
@@ -24,6 +24,10 @@ The standalone application scans an entire recording before preview or export. T
 - Host automation and saved control/skin state.
 
 ## Install and use
+
+**Apple Silicon Mac (M1/M2 and later):** requires macOS 14 Sonoma or later. Extract the `macOS-arm64.zip`, copy `NoiseBase.app` to Applications, and copy the complete `NoiseBase.vst3` bundle to `~/Library/Audio/Plug-Ins/VST3`. Use a native arm64 DAW. The Mac package is ad-hoc signed, not Developer ID signed or notarized; see the [Mac guide](docs/macOS-user-guide.txt) and [Apple's opening guidance](https://support.apple.com/en-us/102445). Mac update checks open the release page for manual installation. No Intel or AU build is included.
+
+**Windows x64:**
 
 Download and extract the Windows ZIP from [Releases](https://github.com/lakam99/NoiseBase/releases).
 
@@ -61,7 +65,7 @@ Downloads must match GitHub's SHA-256 asset digest, `SHA256SUMS.txt`, and every 
 
 ## Release pipeline
 
-[Windows build and release](https://github.com/lakam99/NoiseBase/actions/workflows/release.yml) runs on main, pull requests, and stable version tags. Only a tag matching the CMake version publishes a release. The pipeline scans source/history, builds both formats, verifies audio and file workflows, tests installation/rollback/update policy, scans nested release archives, then uploads and verifies assets before publishing. Actions are pinned to full commit hashes; publishing uses a separate job with write permission.
+[Windows and Apple Silicon release](https://github.com/lakam99/NoiseBase/actions/workflows/release.yml) runs on main, pull requests, and stable version tags. Only a tag matching the CMake version publishes a release. Both platform jobs must pass. The pipeline scans source/history, builds both formats, verifies audio and file workflows, tests Windows installation/rollback/update policy and Mac signatures, scans nested release archives, then uploads and verifies assets before publishing. Actions are pinned to full commit hashes; publishing uses a separate job with write permission.
 
 To release a new version, update the CMake project version and release notes, commit, then push the corresponding `vMAJOR.MINOR.PATCH` tag. Manual workflow runs build and verify without publishing.
 
@@ -72,6 +76,8 @@ If publishing fails after a successful build, use **Resume verified release publ
 This repository includes the JUCE source, Silero model, generated artwork, and ONNX Runtime CPU headers/runtime required by the current build. No submodule initialization or dependency download is required. Three unused JUCE Android demo Firebase configuration files are omitted; see the [vendor notes](third_party/NOISEBASE-VENDOR-NOTES.md).
 
 Requirements: Windows x64, Visual Studio 2022 C++ Build Tools with Windows SDK, and CMake 3.22 or newer.
+
+For Apple Silicon, install Xcode command-line tools and CMake, then run `cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0` followed by `cmake --build build --target NoiseBase_VST3 NoiseBaseStandalone --parallel 3`. The app is in `build/NoiseBaseStandalone_artefacts/Release/NoiseBase.app`. `python3 scripts/Test-Mac.py` runs native validation on a Mac with a graphical login session.
 
 ```powershell
 git clone https://github.com/lakam99/NoiseBase.git

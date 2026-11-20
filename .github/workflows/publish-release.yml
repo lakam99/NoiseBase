@@ -27,6 +27,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Verify the build run belongs to this tag and repository
+        id: verify
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.tag }}
@@ -46,6 +47,9 @@ jobs:
           assert run['head_repository']['full_name']=='lakam99/NoiseBase'
           jobs=api('actions/runs/'+run_id+'/jobs')['jobs']
           assert any(job['name']=='build' and job['conclusion']=='success' for job in jobs)
+          if tuple(map(int,tag[1:].split('.')))>=(1,5,1):
+              assert any(job['name']=='mac' and job['conclusion']=='success' for job in jobs)
+              with open(os.environ['GITHUB_OUTPUT'],'a') as f:f.write('mac=true\n')
           print('Verified successful build for '+tag+' at '+ref['sha'])
           PY
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -54,7 +58,18 @@ jobs:
           path: release-assets
           run-id: ${{ inputs.run_id }}
           github-token: ${{ github.token }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        if: steps.verify.outputs.mac == 'true'
+        with:
+          name: NoiseBase-macOS-arm64
+          path: release-assets
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
+      - name: Combine platform checksums
+        if: steps.verify.outputs.mac == 'true'
+        run: cat release-assets/SHA256SUMS-mac.txt >> release-assets/SHA256SUMS.txt
       - name: Upload, verify, and publish the existing build
+        # Mac artifacts are also required for releases starting with 1.5.1.
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.tag }}

@@ -48,6 +48,9 @@ juce::var runWindowThemeTests(){
 #if JUCE_WINDOWS
     auto exe=juce::File::getSpecialLocation(juce::File::currentExecutableFile).getFullPathName();
     iconResource=ExtractIconExW(exe.toWideCharPointer(),-1,nullptr,nullptr,0)>0;
+#elif JUCE_MAC
+    auto resources=juce::File::getSpecialLocation(juce::File::currentExecutableFile).getParentDirectory().getSiblingFile("Resources");
+    iconResource=!resources.findChildFiles(juce::File::findFiles,false,"*.icns").isEmpty();
 #endif
     auto* report=new juce::DynamicObject;
     bool supported=lightApplied&&darkApplied;

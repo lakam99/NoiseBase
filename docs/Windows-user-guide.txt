@@ -1,4 +1,4 @@
-NOISEBASE 1.5.0 - WINDOWS x64
+NOISEBASE 1.5.1 - WINDOWS x64
 Automatic dialogue denoising, with an analog hardware-style interface.
 
 IN THIS PACKAGE

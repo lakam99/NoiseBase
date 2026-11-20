@@ -1,0 +1,49 @@
+NOISEBASE FOR APPLE SILICON
+Native arm64 standalone application and VST3 effect. Supports M-series Macs
+(M1, M2 and later), running macOS 14 Sonoma or later. Rosetta is not required.
+Use an Apple Silicon/native DAW to load this arm64 VST3. No Intel build or AU
+component is included.
+
+INSTALL
+1. Extract NoiseBase-VERSION-macOS-arm64.zip.
+2. Copy NoiseBase.app into Applications (or your own ~/Applications folder).
+3. For VST3 use, copy the entire NoiseBase.vst3 bundle into:
+   ~/Library/Audio/Plug-Ins/VST3/
+   Finder > Go > Go to Folder can open that location. Create VST3 if needed.
+4. Restart/rescan your DAW. Keep the complete bundles intact; each contains its
+   speech-detector runtime, model and generated artwork. Do not copy only the
+   inner executable. Close the app/DAW before replacing an older version.
+
+This initial Mac distribution is ad-hoc signed, not Developer ID signed or
+Apple-notarized. macOS may block a downloaded copy. Apple's supported approval
+process and security explanation are here:
+https://support.apple.com/en-us/102445
+No system-wide Gatekeeper changes or quarantine-removal commands are required.
+
+USE
+LOAD CLIP automatically scans a recording for quiet background. CLEAN previews
+or exports denoised dialogue. NOISE BASE + REMOVED monitors the removed-noise
+estimate, which can include dialogue bleed. NOISE BASE + PROCEDURAL generates
+fresh ambience indefinitely from quiet-section statistics. Press play in the
+standalone app; the VST3 follows the host's processing clock.
+
+The procedural profile is saved with standalone settings/DAW state and works
+without reopening the reference. PRINT WAV defaults to a 60-second seamless
+procedural loop, with an editable duration of 1 to 3600 seconds. MIX controls
+its level and OUTPUT TRIM sets gain. BYPASS restores the original input.
+
+The profile stores statistical spectra, stereo correlation and level variation,
+not recorded speech snippets. At least 0.35 seconds of confidently detected quiet
+background is required. It generates a background texture, not individual birds,
+vehicles or impacts. Audition the result: voice detection can misclassify audio.
+
+UPDATES checks GitHub Releases; installing Mac updates is manual through the
+release download page. No audio is uploaded. Audio processing needs no account,
+network connection or API key. Windows' PowerShell installer is not used on Mac.
+
+VERIFICATION
+The release runs native arm64 engine, VST3 host, saved-profile, file workflow,
+procedural export, UI/icon and bundle-signature tests on a macOS build runner.
+Physical audio hardware and your particular DAW are not certified by these tests.
+Verification reports are included. Source and checksums are on the same release:
+https://github.com/lakam99/NoiseBase/releases

@@ -44,11 +44,13 @@ public:
 private:
     void timerCallback() override {
         startTimer(3600000);
+#if JUCE_WINDOWS
         auto installReport=juce::File(juce::SystemStats::getEnvironmentVariable("LOCALAPPDATA",{})).getChildFile("NoiseBase/last-update-result.json");
         if(installReport.existsAsFile()) {
             auto result=juce::JSON::parse(installReport);installReport.deleteFile();
             if(result.isObject()&&!(bool)result["passed"])juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,"NoiseBase update was not installed",result["error"].toString());
         }
+#endif
         auto now=juce::Time::getCurrentTime().toMilliseconds();
         auto previous=preferences->getValue("lastUpdateCheck","0").getLargeIntValue();
         if(preferences->getBoolValue("automaticUpdates",true)&&now-previous>=86400000)checkUpdates(false,false);
@@ -74,6 +76,10 @@ private:
             }
             safe->preferences->setValue("lastUpdateCheck",juce::String(juce::Time::getCurrentTime().toMilliseconds()));safe->preferences->saveIfNeeded();
             if(!(bool)result["available"]){if(manual)juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::InfoIcon,"NoiseBase updates","You are running NoiseBase " NOISEBASE_VERSION ". No newer stable release is available.");return;}
+#if JUCE_MAC
+            auto options=juce::MessageBoxOptions{}.withIconType(juce::MessageBoxIconType::InfoIcon).withTitle("NoiseBase "+result["version"].toString()).withMessage("A newer Apple Silicon release is available. Open the release page to download and install it?").withButton("Open release",1).withButton("Later",0);
+            juce::AlertWindow::showAsync(options,[url=result["releaseUrl"].toString()](int choice){if(choice==1)juce::URL(url).launchInDefaultBrowser();});
+#else
             auto options=juce::MessageBoxOptions{}.withIconType(juce::MessageBoxIconType::InfoIcon).withTitle("NoiseBase "+result["version"].toString());
             options=options.withMessage(prepare?"The update is downloaded and verified. Close other NoiseBase windows and any DAW using its VST3, then install and restart.":"A newer stable release is available on GitHub. Download and verify it now?").withButton(prepare?"Install and restart":"Download update",1).withButton("Later",0);
             juce::AlertWindow::showAsync(options,[safe,prepare,result](int choice){
@@ -84,6 +90,7 @@ private:
                 if(NoiseBaseUpdater::installAndRestart(result,error))juce::JUCEApplication::getInstance()->systemRequestedQuit();
                 else juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,"NoiseBase updates",error);
             });
+#endif
         });
     }
     NoiseBaseUpdater updater;

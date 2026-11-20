@@ -8,6 +8,9 @@
  #include <windows.h>
 #endif
 #include <mutex>
+#if JUCE_MAC
+#include <dlfcn.h>
+#endif
 
 namespace {
 std::once_flag initFlag;
@@ -29,6 +32,15 @@ void initialiseRuntime() {
         auto api=getBase()->GetApi(ORT_API_VERSION);
         if(!api) throw std::runtime_error("ONNX Runtime API version mismatch.");
         Ort::InitApi(api);
+       #elif JUCE_MAC
+        Dl_info location{};
+        if(!dladdr(reinterpret_cast<void*>(&initialiseRuntime),&location)||!location.dli_fname)throw std::runtime_error("Could not locate the NoiseBase bundle.");
+        auto library=juce::File(juce::String::fromUTF8(location.dli_fname)).getParentDirectory().getSiblingFile("Frameworks").getChildFile("libonnxruntime.dylib");
+        auto module=dlopen(library.getFullPathName().toRawUTF8(),RTLD_NOW|RTLD_LOCAL);
+        if(!module)throw std::runtime_error("The bundled Apple Silicon speech runtime could not be loaded.");
+        using GetBase=const OrtApiBase* (*)();auto getBase=reinterpret_cast<GetBase>(dlsym(module,"OrtGetApiBase"));
+        if(!getBase)throw std::runtime_error("Incompatible speech runtime.");
+        auto api=getBase()->GetApi(ORT_API_VERSION);if(!api)throw std::runtime_error("Speech runtime API version mismatch.");Ort::InitApi(api);
        #endif
         sharedEnv=std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_ERROR,"NoiseBase");
         sharedEnv->DisableTelemetryEvents();
