@@ -14,7 +14,6 @@
 
 namespace {
 std::once_flag initFlag;
-std::unique_ptr<Ort::Env> sharedEnv;
 void initialiseRuntime() {
     std::call_once(initFlag,[]{
        #if JUCE_WINDOWS
@@ -42,9 +41,15 @@ void initialiseRuntime() {
         if(!getBase)throw std::runtime_error("Incompatible speech runtime.");
         auto api=getBase()->GetApi(ORT_API_VERSION);if(!api)throw std::runtime_error("Speech runtime API version mismatch.");Ort::InitApi(api);
        #endif
-        sharedEnv=std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_ERROR,"NoiseBase");
-        sharedEnv->DisableTelemetryEvents();
     });
+}
+Ort::Env& environment(){
+    initialiseRuntime();
+    // Register this destructor after dlopen's runtime/logger destructors. A
+    // namespace-scope owner is registered before the library is loaded and can
+    // release its Env after the runtime's logging mutex has already gone away.
+    static auto env=[] {auto value=std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_ERROR,"NoiseBase");value->DisableTelemetryEvents();return value;}();
+    return *env;
 }
 }
 
@@ -55,11 +60,11 @@ struct VoiceDetector::Impl {
     std::array<float,256> state{};
     std::array<float,64> context{};
     Impl() {
-        initialiseRuntime();
+        auto& env=environment();
         Ort::SessionOptions options;
         options.SetIntraOpNumThreads(1); options.SetInterOpNumThreads(1);
         options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
-        session=Ort::Session(*sharedEnv,BinaryData::silero_vad_onnx,(size_t)BinaryData::silero_vad_onnxSize,options);
+        session=Ort::Session(env,BinaryData::silero_vad_onnx,(size_t)BinaryData::silero_vad_onnxSize,options);
         memory=Ort::MemoryInfo::CreateCpu(OrtArenaAllocator,OrtMemTypeDefault);
     }
 };

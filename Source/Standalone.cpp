@@ -3,6 +3,7 @@
 #include "Updater.h"
 #include "OsTheme.h"
 #include <fstream>
+#include <cstdio>
 
 namespace {
 void writeSnapshot(const juce::File& file,const juce::Image& image) {
