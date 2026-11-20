@@ -131,6 +131,12 @@ juce::var validatePlugin(const juce::File& file,const juce::File& snapshot,const
     noiseParameter->setValueNotifyingHost(0);plugin->setStateInformation(noiseState.getData(),(int)noiseState.getSize());
     if(noiseParameter->getValue()<.5f)throw std::runtime_error("VST3 noise-only mode was not restored.");
     report->setProperty("noise_only_automatable_and_saved",true);noiseParameter->setValueNotifyingHost(0);
+    juce::AudioProcessorParameter* proceduralParameter=nullptr;
+    for(auto* parameter:plugin->getParameters())if(parameter->getName(128)=="Procedural noise")proceduralParameter=parameter;
+    if(!proceduralParameter)throw std::runtime_error("VST3 procedural automation parameter is missing.");
+    // Check residual cancellation explicitly; procedural output without a model
+    // is silent regardless of the reduction setting and would hide a failure.
+    proceduralParameter->setValueNotifyingHost(0);
     juce::AudioProcessorParameter* reductionParameter=nullptr;
     for(auto* parameter:plugin->getParameters())if(parameter->getName(128)=="Reduction")reductionParameter=parameter;
     if(!reductionParameter)throw std::runtime_error("VST3 reduction parameter is missing.");
