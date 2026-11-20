@@ -64,6 +64,11 @@ RasterAssets::RasterAssets() {
     switches=horizontalStates(png(BinaryData::switches_png,BinaryData::switches_pngSize));
     buttons=horizontalStates(png(BinaryData::buttons_png,BinaryData::buttons_pngSize));
     auto glass=png(BinaryData::vfd_png,BinaryData::vfd_pngSize);vfd=glass.getClippedImage(bodyBounds(glass));
+    // Materialize source tiles at their own origin. Quartz source-rectangle
+    // drawing of a clipped image can otherwise offset the nine-slice borders.
+    int border=std::min(vfd.getWidth(),vfd.getHeight())/10;
+    int vx[]{0,border,vfd.getWidth()-border,vfd.getWidth()},vy[]{0,border,vfd.getHeight()-border,vfd.getHeight()};
+    for(int y=0;y<3;++y)for(int x=0;x<3;++x)vfdPieces[(size_t)(y*3+x)]=vfd.getClippedImage({vx[x],vy[y],vx[x+1]-vx[x],vy[y+1]-vy[y]}).createCopy();
     auto keys=png(BinaryData::transport_png,BinaryData::transport_pngSize);
     for(int i=0;i<6;++i){auto cell=keys.getClippedImage({(i%3)*(keys.getWidth()/3),(i/3)*(keys.getHeight()/2),keys.getWidth()/3,keys.getHeight()/2});transport[(size_t)i]=cell.getClippedImage(bodyBounds(cell));}
     auto rawLamps=png(BinaryData::lamps_png,BinaryData::lamps_pngSize);

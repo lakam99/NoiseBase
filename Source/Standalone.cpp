@@ -4,6 +4,9 @@
 #include "OsTheme.h"
 #include <fstream>
 #include <cstdio>
+#if JUCE_MAC
+#include "MacCapture.h"
+#endif
 
 namespace {
 void writeSnapshot(const juce::File& file,const juce::Image& image) {
@@ -217,8 +220,16 @@ juce::var validatePlugin(const juce::File& file,const juce::File& snapshot,const
     if(snapshot!=juce::File{}) {
         std::unique_ptr<juce::AudioProcessorEditor> editor(plugin->createEditorIfNeeded());
         if(!editor)throw std::runtime_error("VST3 editor creation failed.");
-        auto image=editor->createComponentSnapshot(editor->getLocalBounds(),true,1.0f);
-        writeSnapshot(snapshot,image);
+#if JUCE_MAC
+        // The VST3 editor is an embedded NSView; JUCE component snapshots only
+        // paint the host wrapper's black background. Capture the native view.
+        juce::DocumentWindow host("NoiseBase VST3 verification",juce::Colours::black,0);
+        host.setUsingNativeTitleBar(true);host.setContentNonOwned(editor.get(),true);host.setTopLeftPosition(-4000,-4000);host.setVisible(true);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil(250);
+        writeSnapshot(snapshot,captureMacNativeView(host));host.setVisible(false);host.clearContentComponent();
+#else
+        writeSnapshot(snapshot,editor->createComponentSnapshot(editor->getLocalBounds(),true,1.0f));
+#endif
         report->setProperty("editor_created",true);
     }
     report->setProperty("finite_output",finite);report->setProperty("live_noise_only_zero_reduction_error",liveNoiseSilence);report->setProperty("runs",runs);report->setProperty("passed",finite&&saved.getSize()>0&&liveNoiseSilence<.00002f&&generatedInHost);

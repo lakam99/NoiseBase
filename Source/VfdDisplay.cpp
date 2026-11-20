@@ -27,15 +27,12 @@ const std::map<juce::juce_wchar,Glyph> letters{
 };
 }
 void drawVfdHousing(juce::Graphics& g,juce::Rectangle<float> bounds) {
-    const auto& image=RasterAssets::get().vfd;
+    const auto& art=RasterAssets::get();
     float edge=std::min(8.0f,bounds.getHeight()*.2f);
-    int sourceEdge=std::min(image.getWidth(),image.getHeight())/10;
-    int sx[]{0,sourceEdge,image.getWidth()-sourceEdge,image.getWidth()};
-    int sy[]{0,sourceEdge,image.getHeight()-sourceEdge,image.getHeight()};
     float dx[]{bounds.getX(),bounds.getX()+edge,bounds.getRight()-edge,bounds.getRight()};
     float dy[]{bounds.getY(),bounds.getY()+edge,bounds.getBottom()-edge,bounds.getBottom()};
     for(int y=0;y<3;++y)for(int x=0;x<3;++x)
-        g.drawImage(image,(int)dx[x],(int)dy[y],(int)(dx[x+1]-dx[x]),(int)(dy[y+1]-dy[y]),sx[x],sy[y],sx[x+1]-sx[x],sy[y+1]-sy[y]);
+        g.drawImage(art.vfdPieces[(size_t)(y*3+x)],juce::Rectangle<float>{dx[x],dy[y],dx[x+1]-dx[x],dy[y+1]-dy[y]},juce::RectanglePlacement::stretchToFit);
 }
 void VfdLine::draw(juce::Graphics& g,const juce::String& source,juce::Rectangle<float> bounds,float pitch,bool scroll) {
     auto text=source.toUpperCase().substring(0,1024);
