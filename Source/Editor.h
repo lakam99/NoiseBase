@@ -20,6 +20,8 @@ class NoiseBaseEditor final : public juce::AudioProcessorEditor,public juce::Fil
 public:
     explicit NoiseBaseEditor(NoiseBaseProcessor&);
     ~NoiseBaseEditor() override;
+    void parentHierarchyChanged() override {if(auto* peer=getPeer())peer->setCurrentRenderingEngine(0);}
+    void visibilityChanged() override {if(auto* peer=getPeer())peer->setCurrentRenderingEngine(0);}
     void paint(juce::Graphics&) override;
     void resized() override;
     bool isInterestedInFileDrag(const juce::StringArray& files) override {return !processor.busy.load()&&files.size()==1;}

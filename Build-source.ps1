@@ -7,5 +7,5 @@ if ($Generator -eq 'Ninja') {
     & cmake -S $PSScriptRoot -B $build -G $Generator -A x64
 }
 if ($LASTEXITCODE -ne 0) {throw 'CMake configuration failed.'}
-& cmake --build $build --config Release --target NoiseBase_VST3 NoiseBaseStandalone --parallel 6
+& cmake --build $build --config Release --target NoiseBase_VST3 NoiseBaseStandalone NoiseBaseTeardownHost --parallel 6
 if ($LASTEXITCODE -ne 0) {throw 'Build failed.'}

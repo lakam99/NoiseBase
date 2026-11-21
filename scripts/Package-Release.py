@@ -32,9 +32,11 @@ for script in ('Install-NoiseBase.ps1','Release-Common.ps1'):
     shutil.copy2(root / 'scripts' / script, stage / script)
 shutil.copy2(root / 'docs/Windows-user-guide.txt', stage / 'README.txt')
 shutil.copy2(root / 'README.md', stage / 'README.md')
-for source in (build / 'verification').glob('*'):
-    destination = stage / ('Previews' if source.suffix == '.png' else 'Verification') / source.name
-    destination.parent.mkdir(exist_ok=True)
+for source in (build / 'verification').rglob('*'):
+    if not source.is_file():
+        continue
+    destination = stage / ('Previews' if source.suffix == '.png' else 'Verification') / source.relative_to(build / 'verification')
+    destination.parent.mkdir(parents=True,exist_ok=True)
     shutil.copy2(source, destination)
 
 def digest(path):

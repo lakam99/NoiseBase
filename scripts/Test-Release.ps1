@@ -4,6 +4,7 @@ $Build=[IO.Path]::GetFullPath($Build)
 $app=Join-Path $Build 'NoiseBaseStandalone_artefacts/Release/NoiseBase.exe'
 $plugin=Join-Path $Build 'NoiseBase_artefacts/Release/VST3/NoiseBase.vst3'
 $folder=Join-Path $Build 'verification'
+& (Join-Path $PSScriptRoot 'Test-Teardown.ps1') -Build $Build
 $null=New-Item -ItemType Directory -Path $folder -Force
 function Invoke-Check([string[]]$Arguments,[string]$Report) {
     $quoted=@($Arguments | ForEach-Object {'"'+$_+'"'}) + @('--report',('"'+$Report+'"'))
