@@ -38,7 +38,7 @@ Utilities supported by NoiseBase.exe (file paths can be quoted):
   --render-ui verifying.png --update-progress -1 --update-phase VERIFYING --report render.json
   --validate-plugin NoiseBase.vst3 --report validation.json
   --validate-plugin NoiseBase.vst3 --cache-state session-cache.bin --report validation.json
-  --restore-cached-plugin NoiseBase.vst3 --cache-state session-cache.bin --snapshot restored.png --report restored.json
+  --restore-cached-plugin NoiseBase.vst3 --cache-state session-cache.bin --report restored.json
   --render-ui restored-cache.png --plugin-layout --cache-state session-cache.bin --skin 2 --report restored-ui.json
   --ui-smoke input.wav new-output.wav --snapshot loaded.png --report workflow.json
 

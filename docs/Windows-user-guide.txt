@@ -203,9 +203,9 @@ CONTROLS
 The needles show peak level in dBFS and average spectral gain reduction in dB;
 they are hardware-style displays, not certified VU loudness meters. Current
 knob values appear while dragging, and all main controls support host automation.
-Control positions and the skin are saved with the DAW state. The stand-alone
-also remembers controls between launches. Live noise profiles are relearned
-when a new audio session starts; use a short pause before committing a bounce.
+Control positions, skin and learned live profiles are saved with the DAW song.
+Save after learning to preserve the per-instance cache across restarts. The
+standalone also remembers controls and its loaded-clip model between launches.
 
 LATENCY AND LIMITS
 Latency is reported to the host: 2048 samples at 44.1/48 kHz, 4096 at 96 kHz
