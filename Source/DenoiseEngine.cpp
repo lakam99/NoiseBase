@@ -11,6 +11,8 @@ void DenoiseEngine::prepare(double sr, int channels) {
     input.assign((size_t)channelCount, std::vector<float>((size_t)size, 0));
     output.assign((size_t)channelCount, std::vector<float>((size_t)outputCapacity, 0));
     fftData.assign((size_t)channelCount, std::vector<float>((size_t)size * 2, 0));
+    removableData.assign((size_t)channelCount,std::vector<float>((size_t)size*2,0));
+    removableOutput.assign((size_t)channelCount,std::vector<float>((size_t)outputCapacity,0));
     int bins = size / 2 + 1;
     noise.assign((size_t)bins, 1e-16f); minimum.assign((size_t)bins, 1e30f);
     smoothedPower.assign((size_t)bins, 0); power.assign((size_t)bins, 0);
@@ -23,6 +25,7 @@ void DenoiseEngine::prepare(double sr, int channels) {
     outputSmooth.reset(rate,.035); outputSmooth.setCurrentAndTargetValue(1);
     bypassSmooth.reset(rate,.025); bypassSmooth.setCurrentAndTargetValue(1);
     noiseOnlySmooth.reset(rate,.025); noiseOnlySmooth.setCurrentAndTargetValue(0);
+    rustleGain.reset(rate,.001);rustleGain.setCurrentAndTargetValue(1);
     meterInput=meterOutput=meterReduction=0;
 }
 
@@ -33,6 +36,7 @@ void DenoiseEngine::resetNoise() {
     learnedSeconds=0; profileReady=false; minimumAge=0;
     candidateSeconds=speechHangover=0;changes=0;
     rustle.reset();
+    rustleGain.setCurrentAndTargetValue(1);
 }
 
 bool DenoiseEngine::setProfile(const NoiseProfile& profile,bool clearHistory) {
@@ -46,7 +50,7 @@ bool DenoiseEngine::setProfile(const NoiseProfile& profile,bool clearHistory) {
         noise[k]=std::max(1e-16f,(profile.power[(size_t)a]+fraction*(profile.power[(size_t)b]-profile.power[(size_t)a]))*(float)scale);
     }
     learnedSeconds=profile.quietSeconds; profileReady=!profile.estimated;candidateSeconds=0;
-    if(clearHistory){std::fill(priorClean.begin(),priorClean.end(),0);std::fill(priorGain.begin(),priorGain.end(),1);rustle.reset();}
+    if(clearHistory){std::fill(priorClean.begin(),priorClean.end(),0);std::fill(priorGain.begin(),priorGain.end(),1);rustle.reset();rustleGain.setCurrentAndTargetValue(1);}
     return true;
 }
 bool DenoiseEngine::copyLearnedProfile(NoiseProfile& p) const {
@@ -66,6 +70,8 @@ void DenoiseEngine::frame(float speech, float cap, float preserve, bool learn) {
         }
     }
     rustle.analyse(power);
+    float target=rustleEnabled?rustle.outputGain(cap,speech,preserve):1.0f;
+    if(target!=rustleGain.getTargetValue()){float current=rustleGain.getCurrentValue();rustleGain.reset(rate,target<current?.001:.035);rustleGain.setCurrentAndTargetValue(current);rustleGain.setTargetValue(target);}
     double arithmetic=0;
     int first=juce::jmax(1,(int)(120*size/rate)), last=juce::jmin(size/2,(int)(4500*size/rate));
     for(int k=first;k<=last;++k) arithmetic+=power[(size_t)k];
@@ -104,20 +110,23 @@ void DenoiseEngine::frame(float speech, float cap, float preserve, bool learn) {
         float prior=juce::jmax(.90f*priorClean[k]+.10f*immediate,.65f*immediate);
         float g=juce::jlimit(floor,1.0f,prior/(1+prior));
         priorClean[k]=posterior*g*g;
-        frequencyScratch[k]=std::max(floor,g*(rustleEnabled?rustle.gainForBin((int)k,cap,speech,preserve):1.0f));
+        frequencyScratch[k]=g;
     }
     double averageGain=0;
     for(size_t k=0;k<gain.size();++k) {
         size_t a=k==0?0:k-1,b=std::min(k+1,gain.size()-1);
         float smooth=.25f*frequencyScratch[a]+.5f*frequencyScratch[k]+.25f*frequencyScratch[b];
-        gain[k]=.28f*priorGain[k]+.72f*smooth; priorGain[k]=gain[k]; averageGain+=gain[k];
+        gain[k]=.28f*priorGain[k]+.72f*smooth; priorGain[k]=gain[k];averageGain+=gain[k]*(1-(1-target)*rustle.removableWeight((int)k,preserve));
     }
     meterReduction=.9f*meterReduction+.1f*juce::jmax(0.0f,-juce::Decibels::gainToDecibels((float)(averageGain/gain.size()),-60.0f));
     for(int c=0;c<channelCount;++c) {
         auto& data=fftData[(size_t)c];
         for(int k=0;k<=size/2;++k) { data[(size_t)k*2]*=gain[(size_t)k]; data[(size_t)k*2+1]*=gain[(size_t)k]; }
+        auto& removable=removableData[(size_t)c];std::copy(data.begin(),data.end(),removable.begin());
+        for(int k=0;k<=size/2;++k){float weight=rustle.removableWeight(k,preserve);removable[(size_t)k*2]*=weight;removable[(size_t)k*2+1]*=weight;}
         fft->performRealOnlyInverseTransform(data.data());
-        for(int i=0;i<size;++i) output[(size_t)c][(size_t)((outputPos+1+i)&(outputCapacity-1))]+=data[(size_t)i]*window[(size_t)i]*(2.0f/3.0f);
+        fft->performRealOnlyInverseTransform(removable.data());
+        for(int i=0;i<size;++i){auto index=(size_t)((outputPos+1+i)&(outputCapacity-1));float weight=window[(size_t)i]*(2.0f/3.0f);output[(size_t)c][index]+=data[(size_t)i]*weight;removableOutput[(size_t)c][index]+=removable[(size_t)i]*weight;}
     }
 }
 
@@ -132,11 +141,17 @@ void DenoiseEngine::process(juce::AudioBuffer<float>& buffer,float speech,float 
         float mixValue=mixSmooth.getNextValue(),active=bypassSmooth.getNextValue();
         float blend=mixValue*active,listen=noiseOnlySmooth.getNextValue();
         float level=outputSmooth.getNextValue();
+        // Apply the transient decision to the completed overlap-add layer.
+        // Earlier FFT contributions are still buffered here, so their onset
+        // can be cleaned using the existing latency rather than leaking past
+        // independently attenuated frames. No additional audio delay is added.
+        float artifactGain=rustleGain.getNextValue();
         for(int c=0;c<channelCount;++c) {
             float v=buffer.getSample(c,s); peakIn=std::max(peakIn,std::abs(v));
             float dry=input[(size_t)c][(size_t)inputPos];
             input[(size_t)c][(size_t)inputPos]=std::isfinite(v)?v:0;
             float wet=output[(size_t)c][(size_t)outputPos]; output[(size_t)c][(size_t)outputPos]=0;
+            wet-=(1-artifactGain)*removableOutput[(size_t)c][(size_t)outputPos];removableOutput[(size_t)c][(size_t)outputPos]=0;
             float clean=dry+(wet-dry)*blend;
             // Subtract before output trim, using the same delayed dry reference.
             // Bypass restores the original even when noise-only remains selected.

@@ -69,7 +69,8 @@ strokes permit stronger attenuation. Confident bursts are excluded from live
 and whole-file floor learning, while sustained new backgrounds still adapt.
 
 No extra switch, knob, training step or lookahead delay is required. Existing
-REDUCTION and VOICE DETAIL affect the reduction limit and speech protection.
+REDUCTION scales cleanup strength and VOICE DETAIL influences protection.
+Confirmed friction receives deeper transient cleanup than the steady floor.
 It works with HOLD too; zero REDUCTION, dry blend and bypass retain their normal
 behavior. Saved session profiles remain compatible. Rustle can resemble
 consonants: ambiguous strokes are treated lightly, and noise overlapping words

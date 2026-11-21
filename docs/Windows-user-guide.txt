@@ -1,4 +1,4 @@
-NOISEBASE 1.10.0 - WINDOWS x64
+NOISEBASE 1.10.1 - WINDOWS x64
 Automatic dialogue denoising, with an analog hardware-style interface.
 
 IN THIS PACKAGE
@@ -163,7 +163,8 @@ strokes permit stronger attenuation. Confident bursts are excluded from live
 and whole-file floor learning, while sustained new backgrounds still adapt.
 
 No extra switch, knob, training step or lookahead delay is required. Existing
-REDUCTION and VOICE DETAIL affect the reduction limit and speech protection.
+REDUCTION scales cleanup strength and VOICE DETAIL influences protection.
+Confirmed friction receives deeper transient cleanup than the steady floor.
 It works with HOLD too; zero REDUCTION, dry blend and bypass retain their normal
 behavior. Saved session profiles remain compatible. Rustle can resemble
 consonants: ambiguous strokes are treated lightly, and noise overlapping words
@@ -202,7 +203,8 @@ during speech. Until a reliable floor is available, reduction is capped at
 processing; a conventional VST3 only receives the audio played through it.
 
 CONTROLS
-  REDUCTION       Maximum suppression, 0-24 dB. Start around 10-14 dB.
+  REDUCTION       Steady-noise reduction, 0-24 dB; also scales rustle cleanup.
+                  Start around 10-14 dB. Confirmed rustle can receive a deeper cut.
   VOICE DETAIL    More protection for quieter speech components.
   DRY / CLEAN     Blend original and denoised audio at matching latency.
   OUTPUT TRIM     -12 to +12 dB; true bypass ignores this trim.

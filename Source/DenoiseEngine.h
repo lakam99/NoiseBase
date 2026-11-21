@@ -43,10 +43,11 @@ private:
     std::unique_ptr<juce::dsp::FFT> fft;
     std::vector<float> window, noise, minimum, smoothedPower, power, gain, priorClean, priorGain, frequencyScratch;
     std::vector<float> candidate;
-    std::vector<std::vector<float>> input, output, fftData;
+    std::vector<std::vector<float>> input, output, fftData,removableOutput,removableData;
     bool profileReady = false;
     float meterInput = 0, meterOutput = 0, meterReduction = 0;
     juce::SmoothedValue<float> mixSmooth, outputSmooth, bypassSmooth, noiseOnlySmooth;
+    juce::SmoothedValue<float> rustleGain;
     RustleSuppressor rustle;
     bool rustleEnabled=true;
 };

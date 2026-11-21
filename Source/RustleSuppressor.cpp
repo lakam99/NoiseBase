@@ -9,7 +9,7 @@ void RustleSuppressor::prepare(double sr,int fftSize,int hopSize){
     low=std::clamp((int)std::ceil(80*size/rate),1,first);width=std::max(2,(int)std::round(250*size/rate));
     prefix.resize((size_t)bins+1);spectrum.resize((size_t)bins);tonalHistory.resize((size_t)bins);detectedFrames=0;reset();
 }
-void RustleSuppressor::reset(){initialized=event=repeated=false;confidence=textureConfidence=0;background=age=quietAge=peak=valley=0;std::fill(prefix.begin(),prefix.end(),0);std::fill(spectrum.begin(),spectrum.end(),0);std::fill(tonalHistory.begin(),tonalHistory.end(),0);}
+void RustleSuppressor::reset(){initialized=event=repeated=false;confidence=textureConfidence=eventTexture=0;background=age=quietAge=peak=valley=0;std::fill(prefix.begin(),prefix.end(),0);std::fill(spectrum.begin(),spectrum.end(),0);std::fill(tonalHistory.begin(),tonalHistory.end(),0);}
 void RustleSuppressor::analyse(const std::vector<float>& power){
     if(power.size()!=spectrum.size()||last-first<4){confidence=0;return;}
     double high=0,body=0,logs=0;prefix[0]=0;
@@ -28,9 +28,10 @@ void RustleSuppressor::analyse(const std::vector<float>& power){
     textureConfidence+=(texture-textureConfidence)*(float)(1-std::exp(-seconds/.012));shape=std::max(shape,texture);
     if(!initialized){background=high;initialized=true;}
     double ratio=high/std::max(background,1e-25);bool audible=high/(size*(double)size)>1e-12;
-    if(!event&&audible&&ratio>(texture>.25f?2.0:4.0)&&shape>.1f){event=true;repeated=false;age=quietAge=0;peak=valley=high;}
+    if(!event&&audible&&ratio>(texture>.25f?2.0:4.0)&&shape>.1f){event=true;repeated=false;age=quietAge=0;peak=valley=high;eventTexture=textureConfidence;}
     if(event){
         age+=seconds;
+        eventTexture=std::max(eventTexture,textureConfidence);
         if(high>peak){peak=high;valley=high;}else valley=std::min(valley,high);
         if(valley<peak*.35&&high>valley*2&&high>peak*.12){repeated=true;peak=valley=high;}
         quietAge=ratio<1.5&&shape<.15f?quietAge+seconds:0;
@@ -42,15 +43,22 @@ void RustleSuppressor::analyse(const std::vector<float>& power){
     // A sustained new noise floor must eventually be learned normally.
     double tracking=high<background?.060:(event?.65:.20);background+=(high-background)*(1-std::exp(-seconds/tracking));
 }
-float RustleSuppressor::gainForBin(int k,float cap,float speech,float preserve) const {
-    if(confidence<.001f||cap<=0||k<0||k>=(int)spectrum.size())return 1;
-    double frequency=k*rate/size;float band=unit((frequency-1800)/1200);if(band<=0)return 1;
+float RustleSuppressor::removableWeight(int k,float preserve) const {
+    if(k<0||k>=(int)spectrum.size())return 0;
+    double frequency=k*rate/size;float band=unit((frequency-1800)/1200);if(band<=0)return 0;
     int a=std::max(0,k-width),b=std::min((int)spectrum.size()-1,k+width);double neighbours=(prefix[(size_t)b+1]-prefix[(size_t)a])/(b-a+1);
-    float tonal=unit((spectrum[(size_t)k]/std::max(1e-30,neighbours)-2)/3)*tonalHistory[(size_t)k];
+    float tonal=unit((unit((spectrum[(size_t)k]/std::max(1e-30,neighbours)-2)/3)*tonalHistory[(size_t)k]-.35)/.50);
+    return band*(1-(.8f+.19f*unit(preserve))*tonal);
+}
+float RustleSuppressor::outputGain(float amount,float speech,float preserve) const {
+    if(confidence<.001f||amount<=0)return 1;
     // Keep isolated speech onsets conservative. Irregular repeated strokes
     // permit more attenuation; narrow harmonic peaks receive extra protection.
     float speechGuard=unit(speech)*unit(preserve),certainSpeech=unit((speech-.85f)/.10f);
-    float limit=repeated?14.0f-3*speechGuard:std::max(6.0f-5.5f*speechGuard,(14.0f-3*speechGuard)*textureConfidence*(1-certainSpeech));
-    float db=std::min(cap,limit)*confidence*band*(1-.90f*tonal);
+    float limit=repeated?14.0f-3*speechGuard:std::max(6.0f-5.5f*speechGuard,(14.0f-3*speechGuard)*eventTexture*(1-certainSpeech));
+    bool certainRustle=repeated||(eventTexture>.45f&&certainSpeech<.6f);
+    float depth=certainRustle?std::min(36.0f,2.5f*std::min(amount,limit)):std::min(amount,limit);
+    float certainty=certainRustle?unit((confidence-.08f)/.50f):confidence;
+    float db=depth*certainty;
     return std::pow(10.0f,-db/20);
 }

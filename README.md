@@ -75,7 +75,9 @@ Select **NOISE BASE** and **REMOVED** for the denoiser's estimated removed-noise
 
 CLEAN processing also detects short, broadband high-frequency friction bursts typical of hair or clothing brushing a lavalier. It follows changes in spectral shape and burst timing, protects narrow voice harmonics, and treats isolated speech onsets conservatively. Repeated irregular strokes permit stronger attenuation. Confidently detected bursts are excluded from live and whole-file noise-floor learning.
 
-There is no extra switch, knob, training step or added lookahead delay. It works during live VST3 processing, standalone preview and file export, including HOLD. REDUCTION sets the existing attenuation limit; VOICE DETAIL influences speech protection. Zero REDUCTION, dry blend and bypass retain their existing behavior. Saved session profiles remain compatible.
+There is no extra switch, knob, training step or added lookahead delay. It works during live VST3 processing, standalone preview and file export, including HOLD. REDUCTION scales cleanup strength; confidently detected friction receives deeper transient attenuation than the steady-background floor. VOICE DETAIL influences speech protection. Zero REDUCTION, dry blend and bypass retain their existing behavior. Saved session profiles remain compatible.
+
+The rustle decision is applied to a separate high-frequency layer at the completed output, using the existing FFT delay. This cleans the onset contributions from overlapping analysis frames as well as the later part of a stroke. Persistent voice harmonics receive protection, and the low/mid dialogue remains on the normal denoising path.
 
 This is selective reduction, not guaranteed separation of every clothing sound from speech. Ambiguous consonants receive lighter treatment; dense friction overlapping words can remain. Audition the dialogue as well as the removed-noise output.
 
@@ -120,7 +122,7 @@ The build copies the required runtime DLLs alongside both formats. See [BUILDING
 
 ## Verification and limits
 
-Release verification covers engine timing/bypass/stereo checks at 44.1, 48, and 96 kHz, transient friction reduction with voice/sibilant protection, stitched-background scans, real VST3 sidechain routing/transport/silence/seek behavior, lookahead gap limits and profile timing, CLEAN/sidechain cache restoration in fresh processes with AUTO enabled, delayed worker cleanup, and the standalone file workflow. An independent visual critic reviewed the native skins, VFD update progress, reference switch and gap controls. See the [1.10.0 release notes](docs/Release-1.10.0.md); native reports are included in release packages. The reported Studio Pro freeze has not been reproduced in that DAW, and physical audio devices have not been certified by these tests.
+Release verification covers engine timing/bypass/stereo checks at 44.1, 48, and 96 kHz, transient friction/onset reduction with voice/sibilant protection, stitched-background scans, real VST3 sidechain routing/transport/silence/seek behavior, lookahead gap limits and profile timing, CLEAN/sidechain cache restoration in fresh processes with AUTO enabled, delayed worker cleanup, and the standalone file workflow. An independent visual critic reviewed the native skins, VFD update progress, reference switch and gap controls. See the [1.10.1 release notes](docs/Release-1.10.1.md); native reports are included in release packages. The reported Studio Pro freeze has not been reproduced in that DAW, and physical audio devices have not been certified by these tests.
 
 Reported latency is 2048 samples at 44.1/48 kHz and 4096 samples at 96 kHz; standalone file export compensates this delay. This processor targets dialogue with persistent background noise. Strong wind impacts, clipping, and overlapping voices may remain. Large reduction settings can soften speech, so audition the result.
 

@@ -1,0 +1,10 @@
+NoiseBase 1.10.1 adds stronger automatic high-frequency lavalier rustle cleanup, including the beginning of a friction stroke. It replaces the lighter 1.10.0 preview.
+
+- A protected high-frequency layer is reconstructed alongside the normal denoised output. The transient decision acts on that completed layer, cleaning overlapping FFT contributions that previously let the onset leak through. It uses the existing FFT delay and adds no lookahead latency.
+- Broadband texture, spectral roll-off and repeated-stroke evidence determine the reduction. Confirmed friction receives deeper cleanup; isolated high-confidence speech onsets remain conservative. Narrow, persistent harmonics are protected. The low/mid dialogue stays on the normal denoising path.
+- No switch, knob or manual training step was added. Existing REDUCTION scales cleanup strength, VOICE DETAIL influences protection, and CLEAN/REMOVED, dry blend and bypass retain their routes. Saved noise profiles remain compatible. No new neural model, runtime download, audio upload or inference thread is included.
+- Audio buffers and FFT workspaces are preallocated. Transient decisions run with the existing processing, and detected bursts remain excluded from live and whole-file noise-floor learning.
+
+Verification covers paired friction bursts and their first onset, foreground voice preservation, clean spoken audio, wideband and shaped sibilants, sustained background changes, sample timing, stereo phase, zero reduction, bypass, removed-noise reconstruction, caches, actual VST3 hosting, file/export workflows and installation. Native Windows and Apple Silicon reports are included in the packages. Listening feedback on personal examples guided the cleanup; those recordings are not distributed.
+
+Rustle and unvoiced speech can resemble one another. This is automatic signal analysis, not a universal source-separation model; material outside the detected high-frequency friction pattern may remain. Audition the dialogue and removed-noise output, especially on unfamiliar microphones or recordings.
