@@ -23,7 +23,9 @@ def check(name,*args):
 
 check('engine','--self-test')
 check('theme-icon','--theme-test')
-check('vst3','--validate-plugin',plugin,'--snapshot',reports/'vst3-host.png')
+check('vst3','--validate-plugin',plugin,'--snapshot',reports/'vst3-host.png','--cache-state',reports/'session-cache.bin')
+check('cache-cold-start','--restore-cached-plugin',plugin,'--cache-state',reports/'session-cache.bin','--snapshot',reports/'cache-restored.png')
+check('cache-cold-start-bridge','--restore-cached-plugin',plugin,'--cache-state',reports/'session-cache-bridge.bin')
 check('sidechain-ui','--render-ui',reports/'sidechain.png','--plugin-layout','--procedural','--sidechain','--skin',2)
 check('gap-bridge-ui','--render-ui',reports/'gap-bridge.png','--plugin-layout','--procedural','--sidechain','--bridge','--reference-preview','--skin',2)
 fixture=build/'fixture.wav'

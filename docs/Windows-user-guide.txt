@@ -1,4 +1,4 @@
-NOISEBASE 1.8.0 - WINDOWS x64
+NOISEBASE 1.9.0 - WINDOWS x64
 Automatic dialogue denoising, with an analog hardware-style interface.
 
 IN THIS PACKAGE
@@ -73,6 +73,21 @@ Authenticode-signed. No audio is sent to GitHub. The VST3 itself never checks
 for updates or replaces a module inside a running DAW. The previous installed
 version is retained as a backup; user settings and recordings are preserved.
 
+SAVED LIVE PROFILE CACHE
+Save your DAW song after learning. Each NoiseBase instance stores its live CLEAN
+floor and sidechain cache in the plug-in state inside that song. Reopening the
+saved song restores those profiles with AUTO still enabled. AUTO recalls known
+timeline regions and keeps adapting to new or changed backgrounds. LEARN clears
+the selected source's cache and rebuilds it as audio arrives; with a loaded file,
+it still rescans the entire file. A VST3 cannot analyze unplayed host audio.
+
+Up to 64 regions per source contain statistical spectra and ambience properties,
+not recorded audio. No external cache file or recording edits are required.
+NoiseBase tells the host when learned state changes so it can save that state.
+The VFD shows the cached-region count. Moving/replacing clips can need new
+learning at their new timeline positions. Cached sidechain profiles still obey
+playback/input gating and the BRIDGE delay when enabled.
+
 PROCEDURAL AMBIENCE FROM ONE CLIP
 LOAD CLIP works in the VST3 and standalone. Select NOISE BASE and PROCEDURAL
 after the scan to generate fresh continuous ambience from quiet-frame spectra,
@@ -111,9 +126,10 @@ and starts again. The main input remains the source for CLEAN/REMOVED and bypass
 
 A stopped host, disconnected sidechain or digitally silent reference fades the
 bed out. It resumes with reference audio during playback. HOLD freezes texture,
-not playback. AUTO seeks/loop wraps discard old-location analysis and wait for
-new quiet background; HOLD retains its profile across jumps. The model/source
-switch are saved with DAW state, but restored output also waits for reference.
+not playback. AUTO seeks/loop wraps recall known destination profiles from the
+cache; uncached destinations wait for new quiet background. HOLD retains its
+profile across jumps. The cache/source switch are saved with DAW state, but
+restored output also waits for reference.
 The input meter/VFD dBFS value show the sidechain; the VFD shows host play/stop
 and position when available. Offline rendering follows reference input despite
 a stopped live-transport flag. Hosts without transport data use input activity.

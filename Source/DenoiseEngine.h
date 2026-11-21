@@ -20,6 +20,7 @@ public:
     void prepare(double sampleRate, int channels);
     void resetNoise();
     bool setProfile(const NoiseProfile&,bool clearHistory=false);
+    bool copyLearnedProfile(NoiseProfile&) const; // caller preallocates power
     void process(juce::AudioBuffer<float>&, float speech, float reductionDb,
                  float preserve, float mix, float outputDb, bool autoLearn, bool bypass, bool noiseOnly=false);
     int latency() const { return size; }

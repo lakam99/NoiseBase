@@ -47,6 +47,9 @@ bool DenoiseEngine::setProfile(const NoiseProfile& profile,bool clearHistory) {
     if(clearHistory){std::fill(priorClean.begin(),priorClean.end(),0);std::fill(priorGain.begin(),priorGain.end(),1);}
     return true;
 }
+bool DenoiseEngine::copyLearnedProfile(NoiseProfile& p) const {
+    if(!profileReady||learnedSeconds<.35)return false;p.sampleRate=rate;p.fftSize=size;p.quietSeconds=learnedSeconds;p.estimated=false;p.sourceChannels=channelCount;p.power=noise;return true;
+}
 
 void DenoiseEngine::frame(float speech, float cap, float preserve, bool learn) {
     std::fill(power.begin(),power.end(),0);

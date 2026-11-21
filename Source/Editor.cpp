@@ -159,7 +159,7 @@ void NoiseBaseEditor::paint(juce::Graphics& g) {
     }
     bool learned=processor.quietSeconds.load()>=.35f;
     juce::String live=automatic.getToggleState()?(learned?"AUTO TRACK / FOLLOWING NOISE CHANGES":"AUTO TRACK / WAITING FOR QUIET BACKGROUND"):"HOLD / FIXED NOISE FLOOR";
-    if(!processor.detectorAvailable.load())live="SPEECH DETECTOR  /  warming up";
+    if(!processor.detectorAvailable.load()&&!learned)live="SPEECH DETECTOR  /  warming up";
     if(processor.detectorFailed.load())live="DETECTOR UNAVAILABLE  /  restore the runtime files";
     bool standalone=processor.standaloneMode.load();
     bool generated=processor.proceduralSelected();
@@ -168,7 +168,7 @@ void NoiseBaseEditor::paint(juce::Graphics& g) {
     drawVfdHousing(g,{64,485,832,92});
     juce::String controls=juce::StringArray{"IVORY","GRAPHITE","WALNUT"}[look.skin]+"  RED "+juce::String(reduction.getValue(),1)+" DB  VOICE "+juce::String(preserve.getValue(),1)+"%  MIX "+juce::String(mix.getValue(),1)+"%  OUT "+(output.getValue()>=0?"+":"")+juce::String(output.getValue(),1)+" DB";
     {
-        if((standalone&&(!generated||processor.fileMode.load()))||processor.busy.load()||processor.ambienceReady.load())live=processor.getStatus();
+        if((standalone&&(!generated||processor.fileMode.load()))||processor.busy.load()||(generated&&processor.ambienceReady.load()))live=processor.getStatus();
         if(processor.busy.load())live+="  "+juce::String((int)(processor.jobProgress.load()*100))+"%";
         else if(updateBusy)live="CHECKING GITHUB RELEASES";
         else if(standalone&&(processor.fileMode.load()||processor.ambienceReady.load()))live=(processor.isPlaying()?"PLAY  | ":!generated&&processor.playbackPosition()>=processor.playbackDuration()-.001?"END   | ":processor.playbackPosition()>0?"PAUSE | ":"STOP  | ")+live+(!generated&&processor.isLooping()?" | LOOP ON":"");
@@ -192,7 +192,9 @@ void NoiseBaseEditor::paint(juce::Graphics& g) {
         }else displayLines[1].draw(g,routing+" | "+live,{82,518,796,17});
         juce::String referenceText="SIDECHAIN INPUT "+juce::String(juce::Decibels::gainToDecibels(processor.inputLevel.load(),-120.0f),1)+" DBFS";
         if(gapBridge.getToggleState())referenceText+=" | GAP "+juce::String(gapTime.getValue(),2)+" S";
-        displayLines[2].draw(g,processor.externalReferenceSelected()?referenceText:processor.fileMode.load()||processor.ambienceReady.load()?processor.getFileName():"NO CLIP PROFILE LOADED",{82,543,558,17});
+        if(processor.cachedReferenceRegions()>0)referenceText+=" | CACHE "+juce::String(processor.cachedReferenceRegions());
+        juce::String clipText=!generated&&!processor.fileMode.load()&&processor.cachedMainRegions()>0?"SESSION CACHE / "+juce::String(processor.cachedMainRegions())+" LEARNED NOISE REGIONS":processor.fileMode.load()||processor.ambienceReady.load()?processor.getFileName():"NO CLIP PROFILE LOADED";
+        displayLines[2].draw(g,processor.externalReferenceSelected()?referenceText:clipText,{82,543,558,17});
         auto time=[](double value){int seconds=(int)std::max(0.0,value);return juce::String(seconds/60).paddedLeft('0',2)+":"+juce::String(seconds%60).paddedLeft('0',2);};
         double hostTime=processor.hostPositionSeconds.load();
         juce::String hostClock=processor.externalReferenceSelected()&&hostTime>=0?(processor.referenceTransportRunning.load()?"PLAY ":"STOP ")+time(hostTime):"HOST CLOCK";

@@ -14,6 +14,15 @@ void writeSnapshot(const juce::File& file,const juce::Image& image) {
     juce::MemoryOutputStream bytes;juce::PNGImageFormat png;
     if(!png.writeImageToStream(image,bytes)||!file.replaceWithData(bytes.getData(),bytes.getDataSize()))throw std::runtime_error("Could not replace the preview PNG.");
 }
+void capturePluginEditor(juce::AudioProcessor& plugin,const juce::File& snapshot){
+    std::unique_ptr<juce::AudioProcessorEditor> editor(plugin.createEditorIfNeeded());if(!editor)throw std::runtime_error("VST3 editor creation failed.");
+#if JUCE_MAC
+    juce::DocumentWindow host("NoiseBase VST3 verification",juce::Colours::black,0);host.setUsingNativeTitleBar(true);host.setContentNonOwned(editor.get(),true);host.setTopLeftPosition(-4000,-4000);host.setVisible(true);
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(250);writeSnapshot(snapshot,captureMacNativeView(host));host.setVisible(false);host.clearContentComponent();
+#else
+    writeSnapshot(snapshot,editor->createComponentSnapshot(editor->getLocalBounds(),true,1.0f));
+#endif
+}
 }
 
 class MainPanel final : public juce::AudioAppComponent, private juce::Timer {
@@ -116,7 +125,7 @@ public:
     void closeButtonPressed() override {juce::JUCEApplication::getInstance()->systemRequestedQuit();}
 };
 
-juce::var validatePlugin(const juce::File& file,const juce::File& snapshot,const juce::File& input={},const juce::File& audioOutput={}) {
+juce::var validatePlugin(const juce::File& file,const juce::File& snapshot,const juce::File& input={},const juce::File& audioOutput={},const juce::File& cacheState={},bool restoreCache=false) {
     auto stage=[](const char* text){std::fprintf(stderr,"VST3 verification: %s\n",text);std::fflush(stderr);};stage("discover");
     juce::VST3PluginFormat format;
     juce::OwnedArray<juce::PluginDescription> descriptions;format.findAllTypesForFile(descriptions,file.getFullPathName());
@@ -127,6 +136,7 @@ juce::var validatePlugin(const juce::File& file,const juce::File& snapshot,const
     stage("instance created");
     auto* report=new juce::DynamicObject;
     report->setProperty("name",plugin->getName());report->setProperty("discovered",true);
+    if(restoreCache){bool passed=verifyRestoredCache(*plugin,*report,cacheState);if(passed&&snapshot!=juce::File{}){capturePluginEditor(*plugin,snapshot);report->setProperty("editor_created",true);}plugin->releaseResources();report->setProperty("passed",passed);return juce::var(report);}
     juce::MemoryBlock saved;plugin->getStateInformation(saved);plugin->setStateInformation(saved.getData(),(int)saved.getSize());
     report->setProperty("state_roundtrip",saved.getSize()>0);
     juce::AudioProcessorParameter* noiseParameter=nullptr;
@@ -168,6 +178,7 @@ juce::var validatePlugin(const juce::File& file,const juce::File& snapshot,const
     stage("live input rates passed");
     if(!verifyHostedReference(*plugin,*report)){report->setProperty("passed",false);report->setProperty("error","VST3 external-reference routing or synthesis failed.");return juce::var(report);}
     if(!verifyHostedBridge(*plugin,*report)){report->setProperty("passed",false);report->setProperty("error","VST3 gap lookahead, transition or latency verification failed.");return juce::var(report);}
+    if(!verifyHostedCache(*plugin,*report,cacheState)){report->setProperty("passed",false);report->setProperty("error","VST3 session-cache learning or save verification failed.");return juce::var(report);}
     plugin->setStateInformation(saved.getData(),(int)saved.getSize());
     // Load a self-contained learned model through the real VST3 component state.
     // This exercises the JUCE host wrapper as well as the processor callback.
@@ -237,18 +248,7 @@ juce::var validatePlugin(const juce::File& file,const juce::File& snapshot,const
         plugin->releaseResources();plugin->setNonRealtime(false);
     }
     if(snapshot!=juce::File{}) {
-        std::unique_ptr<juce::AudioProcessorEditor> editor(plugin->createEditorIfNeeded());
-        if(!editor)throw std::runtime_error("VST3 editor creation failed.");
-#if JUCE_MAC
-        // The VST3 editor is an embedded NSView; JUCE component snapshots only
-        // paint the host wrapper's black background. Capture the native view.
-        juce::DocumentWindow host("NoiseBase VST3 verification",juce::Colours::black,0);
-        host.setUsingNativeTitleBar(true);host.setContentNonOwned(editor.get(),true);host.setTopLeftPosition(-4000,-4000);host.setVisible(true);
-        juce::MessageManager::getInstance()->runDispatchLoopUntil(250);
-        writeSnapshot(snapshot,captureMacNativeView(host));host.setVisible(false);host.clearContentComponent();
-#else
-        writeSnapshot(snapshot,editor->createComponentSnapshot(editor->getLocalBounds(),true,1.0f));
-#endif
+        capturePluginEditor(*plugin,snapshot);
         report->setProperty("editor_created",true);
     }
     report->setProperty("finite_output",finite);report->setProperty("live_noise_only_zero_reduction_error",liveNoiseSilence);report->setProperty("runs",runs);report->setProperty("passed",finite&&saved.getSize()>0&&liveNoiseSilence<.00002f&&generatedInHost);
@@ -386,7 +386,7 @@ public:
         auto args=juce::StringArray::fromTokens(commandLine,true);
         for(auto& item:args)item=item.unquoted();
         auto option=[&](const juce::String& name)->juce::String {int i=args.indexOf(name);return i>=0&&i+1<args.size()?args[i+1]:juce::String{};};
-        if(args.contains("--self-test")||args.contains("--process")||args.contains("--render-ui")||args.contains("--validate-plugin")||args.contains("--ui-smoke")||args.contains("--check-updates")||args.contains("--theme-test")) {
+        if(args.contains("--self-test")||args.contains("--process")||args.contains("--render-ui")||args.contains("--validate-plugin")||args.contains("--restore-cached-plugin")||args.contains("--ui-smoke")||args.contains("--check-updates")||args.contains("--theme-test")) {
             try {
                 juce::var report;
                 if(args.contains("--theme-test")){
@@ -431,6 +431,13 @@ public:
                     processor.params.getParameter("externalReference")->setValueNotifyingHost(args.contains("--sidechain")?1:0);
                     processor.params.getParameter("bridgeGaps")->setValueNotifyingHost(args.contains("--bridge")?1:0);
                     if(args.contains("--reference-preview")){processor.inputLevel.store(.03f);processor.referenceConnected.store(true);processor.referenceSignal.store(false);processor.referenceTransportKnown.store(true);processor.referenceTransportRunning.store(true);processor.hostPositionSeconds.store(42.3);processor.referenceOutputActive.store(true);processor.referenceBridging.store(true);processor.ambienceReady.store(true);}
+                    if(!option("--cache-state").isEmpty()){
+                        juce::MemoryBlock saved;if(!juce::File(option("--cache-state")).loadFileAsData(saved))throw std::runtime_error("Could not read preview state.");
+                        auto xml=juce::AudioProcessor::getXmlFromBinary(saved.getData(),(int)saved.getSize());
+                        if(xml&&xml->hasTagName("VST3PluginState")){auto* node=xml->getChildByName("IComponent");juce::MemoryBlock inner;if(!node||!inner.fromBase64Encoding(node->getAllSubText()))throw std::runtime_error("Invalid VST3 preview state.");saved=inner;}
+                        processor.setStateInformation(saved.getData(),(int)saved.getSize());processor.prepareToPlay(48000,512);
+                        processor.params.getParameter("externalReference")->setValueNotifyingHost(args.contains("--sidechain")?1:0);processor.params.getParameter("noiseOnly")->setValueNotifyingHost(args.contains("--sidechain")?1:0);processor.params.getParameter("skin")->setValueNotifyingHost(skin*.5f);
+                    }
                     NoiseBaseEditor editor(processor);
                     if(!option("--update-progress").isEmpty()){
                         double progress=option("--update-progress").getDoubleValue();auto phase=option("--update-phase").isEmpty()?juce::String("DOWNLOADING"):option("--update-phase");
@@ -441,7 +448,7 @@ public:
                     auto image=editor.createComponentSnapshot(editor.getLocalBounds(),true,1.0f);
                     writeSnapshot(juce::File(option("--render-ui")),image);
                     auto* result=new juce::DynamicObject;result->setProperty("passed",true);result->setProperty("skin",skin);report=juce::var(result);
-                } else report=validatePlugin(juce::File(option("--validate-plugin")),option("--snapshot").isEmpty()?juce::File{}:juce::File(option("--snapshot")),option("--input").isEmpty()?juce::File{}:juce::File(option("--input")),option("--render-audio").isEmpty()?juce::File{}:juce::File(option("--render-audio")));
+                } else report=validatePlugin(juce::File(option(args.contains("--restore-cached-plugin")?"--restore-cached-plugin":"--validate-plugin")),option("--snapshot").isEmpty()?juce::File{}:juce::File(option("--snapshot")),option("--input").isEmpty()?juce::File{}:juce::File(option("--input")),option("--render-audio").isEmpty()?juce::File{}:juce::File(option("--render-audio")),option("--cache-state").isEmpty()?juce::File{}:juce::File(option("--cache-state")),args.contains("--restore-cached-plugin"));
                 if(!option("--report").isEmpty())juce::File(option("--report")).replaceWithText(juce::JSON::toString(report,true));
                 if(report.hasProperty("passed") && !(bool)report["passed"])setApplicationReturnValue(2);
             } catch(const std::exception& e) {

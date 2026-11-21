@@ -16,7 +16,10 @@ Invoke-Check @('--render-ui',(Join-Path $folder 'update-downloading.png'),'--ski
 Invoke-Check @('--render-ui',(Join-Path $folder 'update-verifying.png'),'--skin','2','--update-progress','-1','--update-phase','VERIFYING') (Join-Path $folder 'update-verifying.json')
 Invoke-Check @('--render-ui',(Join-Path $folder 'sidechain-vst3.png'),'--plugin-layout','--procedural','--sidechain','--skin','2') (Join-Path $folder 'sidechain-vst3.json')
 Invoke-Check @('--render-ui',(Join-Path $folder 'gap-bridge-vst3.png'),'--plugin-layout','--procedural','--sidechain','--bridge','--reference-preview','--skin','2') (Join-Path $folder 'gap-bridge-vst3.json')
-Invoke-Check @('--validate-plugin',$plugin,'--snapshot',(Join-Path $Build 'host-wrapper.png')) (Join-Path $folder 'vst3.json')
+Invoke-Check @('--validate-plugin',$plugin,'--snapshot',(Join-Path $Build 'host-wrapper.png'),'--cache-state',(Join-Path $folder 'session-cache.bin')) (Join-Path $folder 'vst3.json')
+Invoke-Check @('--restore-cached-plugin',$plugin,'--cache-state',(Join-Path $folder 'session-cache.bin')) (Join-Path $folder 'cache-cold-start.json')
+Invoke-Check @('--restore-cached-plugin',$plugin,'--cache-state',(Join-Path $folder 'session-cache-bridge.bin')) (Join-Path $folder 'cache-cold-start-bridge.json')
+Invoke-Check @('--render-ui',(Join-Path $folder 'cache-restored-vst3.png'),'--plugin-layout','--cache-state',(Join-Path $folder 'session-cache.bin'),'--skin','2') (Join-Path $folder 'cache-restored-ui.json')
 $fixture=Join-Path $Build 'fixture.wav'
 @'
 import math,random,struct,sys,wave

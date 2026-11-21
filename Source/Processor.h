@@ -3,6 +3,7 @@
 #include "TapeReaderSource.h"
 #include "ReferenceLearner.h"
 #include "ReferenceBridge.h"
+#include "ProfileCache.h"
 
 class NoiseBaseProcessor final : public juce::AudioProcessor,private juce::AsyncUpdater,private juce::AudioProcessorValueTreeState::Listener {
 public:
@@ -27,6 +28,8 @@ public:
         return delay>0?.25+(delay+bridgeBaseLatency.load())/bridgeSampleRate.load():.15;
     }
     int bridgeDelaySamples() const{return bridgeLatencySamples.load();}
+    int cachedMainRegions() const{return mainCache.count();}
+    int cachedReferenceRegions() const{return referenceCache.count();}
     int getNumPrograms() override {return 1;}
     int getCurrentProgram() override {return 0;}
     void setCurrentProgram(int) override {}
@@ -62,6 +65,7 @@ public:
     std::atomic<bool> referenceSignal{false},referenceTransportKnown{false},referenceTransportRunning{true};
     std::atomic<double> hostPositionSeconds{-1};
     std::atomic<bool> referenceBridging{false},referenceOutputActive{false};
+    std::atomic<uint64_t> mainCacheHits{0},referenceCacheHits{0};
     std::atomic<int> noiseRegionCount{0},activeNoiseRegion{0};
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout layout();
@@ -71,10 +75,12 @@ private:
     NoiseProfile snapshotReference() const;
     void processAudio(juce::AudioBuffer<float>&,bool forceBypass);
     void parameterChanged(const juce::String&,float) override {triggerAsyncUpdate();}
-    void handleAsyncUpdate() override {refreshBridgeLatency();}
+    void handleAsyncUpdate() override;
+    void markCacheChanged();
     void refreshBridgeLatency();
     void resetBridgeTiming();
     void applyBridgeProfiles(int64_t outputPosition);
+    void enqueueBridgeProfile(const NoiseProfile&,int64_t position);
     DenoiseEngine engine;
     ProceduralNoise generator;
     juce::SmoothedValue<float> proceduralFade,ambienceGain;
@@ -99,6 +105,15 @@ private:
     std::atomic<int> bridgeBaseLatency{2048};
     std::atomic<bool> preparingAudio{false};
     bool wasTransportRunning=true;
+    ProfileCache mainCache{false},referenceCache{true};
+    NoiseProfile cachedMainProfile,cachedReferenceProfile,learnedMainProfile,pendingMainProfile;
+    juce::SpinLock pendingMainLock;
+    std::atomic<bool> pendingMainRestore{false},cacheNotificationPending{false};
+    uint64_t mainCacheId=0,referenceCacheId=0;
+    double mainSegmentStart=0,lastMainQuiet=0;
+    int cacheCaptureCountdown=0,lastMainChanges=0;
+    bool wasMainActive=false,mainHaveExpectedPosition=false;
+    int64_t mainExpectedPosition=0;
     ReferenceLearner reference;
     std::atomic<bool> referenceResetRequested{false};
     mutable juce::CriticalSection profileStateLock;

@@ -11,6 +11,7 @@ struct Packet {
     double rate=48000;
     uint64_t generation=0,sequence=0;
     int64_t sourcePosition=0;
+    double projectSeconds=std::numeric_limits<double>::quiet_NaN();
 };
 
 // Delay spectral measurement until the voice detector has seen both sides of
@@ -93,21 +94,21 @@ struct ReferenceLearner::State {
     juce::AbstractFifo fifo{queueSize};std::array<Packet,queueSize> packets;
     std::atomic<uint64_t> generation{1},sequence{0},submitted{0},completed{0},publishedGeneration{0},minimumGeneration{1},version{0};
     std::atomic<bool> failed{false};std::atomic<int> cleanupDelay{0};
-    juce::SpinLock profileLock;NoiseProfile profile;int64_t profilePosition=0;
+    juce::SpinLock profileLock;NoiseProfile profile;int64_t profilePosition=0;double profileProjectSeconds=std::numeric_limits<double>::quiet_NaN();
 };
 struct ReferenceLearner::Worker final:juce::Thread {
     explicit Worker(std::shared_ptr<State> s):Thread("NoiseBase reference analysis"),state(std::move(s)){}
     void run() override {
         try{
             std::unique_ptr<VoiceDetector> voice;std::unique_ptr<Analysis> analysis;
-            uint64_t generation=0,previous=0;double rate=0;int channels=0;NoiseProfile current;int64_t origin=0;bool firstProfile=true;
+            uint64_t generation=0,previous=0;double rate=0,projectOrigin=std::numeric_limits<double>::quiet_NaN();int channels=0;NoiseProfile current;int64_t origin=0;bool firstProfile=true;
             while(!threadShouldExit()){
                 if(state->fifo.getNumReady()==0){wait(1000);continue;}
                 int a,n1,b,n2;state->fifo.prepareToRead(1,a,n1,b,n2);auto packet=state->packets[(size_t)a];state->fifo.finishedRead(1);
                 if(packet.generation!=state->generation.load()||packet.sequence+(uint64_t)std::ceil(packet.rate*.25)<state->sequence.load()){analysis.reset();state->completed.store(packet.sequence);continue;}
                 if(!voice)voice=std::make_unique<VoiceDetector>();
                 if(!analysis||generation!=packet.generation||previous+(uint64_t)packet.count!=packet.sequence||rate!=packet.rate||channels!=packet.channels){
-                    analysis=std::make_unique<Analysis>(packet.rate,packet.channels,*voice);current={};generation=packet.generation;rate=packet.rate;channels=packet.channels;origin=packet.sourcePosition;firstProfile=true;
+                    analysis=std::make_unique<Analysis>(packet.rate,packet.channels,*voice);current={};generation=packet.generation;rate=packet.rate;channels=packet.channels;origin=packet.sourcePosition;projectOrigin=packet.projectSeconds;firstProfile=true;
                 }
                 previous=packet.sequence;
                 analysis->add(packet,[&](NoiseProfile p,int64_t measuredAt){
@@ -119,7 +120,7 @@ struct ReferenceLearner::Worker final:juce::Thread {
                     }
                     current=p;
                     const juce::SpinLock::ScopedLockType lock(state->profileLock);
-                    state->profile=std::move(p);state->profilePosition=firstProfile?origin:origin+measuredAt;firstProfile=false;state->publishedGeneration.store(generation);++state->version;
+                    state->profile=std::move(p);state->profilePosition=firstProfile?origin:origin+measuredAt;state->profileProjectSeconds=projectOrigin+(firstProfile?0:measuredAt/rate);firstProfile=false;state->publishedGeneration.store(generation);++state->version;
                 });
                 state->completed.store(packet.sequence);
             }
@@ -136,17 +137,17 @@ ReferenceLearner::~ReferenceLearner(){
 void ReferenceLearner::prepare(double sr){rate=sr;++state->generation;if(!worker||!worker->isThreadRunning()){worker.reset();state->failed.store(false);worker=std::make_unique<Worker>(state);worker->startThread();}}
 void ReferenceLearner::reset(){auto generation=++state->generation;state->minimumGeneration.store(generation);}
 void ReferenceLearner::breakStream(){++state->generation;}
-void ReferenceLearner::push(const juce::AudioBuffer<float>& input,int64_t sourcePosition){
+void ReferenceLearner::push(const juce::AudioBuffer<float>& input,int64_t sourcePosition,double projectSeconds){
     int channels=std::min(2,input.getNumChannels());if(!channels)return;bool written=false;
     for(int offset=0;offset<input.getNumSamples();offset+=packetSize){int count=std::min(packetSize,input.getNumSamples()-offset);auto sequence=state->sequence.fetch_add((uint64_t)count)+(uint64_t)count;int a,n1,b,n2;state->fifo.prepareToWrite(1,a,n1,b,n2);
-        if(n1){auto& packet=state->packets[(size_t)a];packet.count=count;packet.channels=channels;packet.rate=rate;packet.generation=state->generation.load();packet.sequence=sequence;packet.sourcePosition=sourcePosition>=0?sourcePosition+offset:(int64_t)sequence-count;
+        if(n1){auto& packet=state->packets[(size_t)a];packet.count=count;packet.channels=channels;packet.rate=rate;packet.generation=state->generation.load();packet.sequence=sequence;packet.sourcePosition=sourcePosition>=0?sourcePosition+offset:(int64_t)sequence-count;packet.projectSeconds=projectSeconds+offset/rate;
             for(int c=0;c<channels;++c)std::copy_n(input.getReadPointer(c)+offset,count,packet.audio[(size_t)c].begin());state->fifo.finishedWrite(1);state->submitted.store(sequence);written=true;}}
     if(written&&worker)worker->notify();
 }
-bool ReferenceLearner::readProfile(NoiseProfile& dest,uint64_t& version,int64_t* position,bool currentStreamOnly){
+bool ReferenceLearner::readProfile(NoiseProfile& dest,uint64_t& version,int64_t* position,bool currentStreamOnly,double* projectSeconds){
     if(!ready()||version==state->version.load())return false;
     const juce::SpinLock::ScopedTryLockType lock(state->profileLock);if(!lock.isLocked()||!ready()||(currentStreamOnly&&state->publishedGeneration.load()!=state->generation.load()))return false;
-    dest=state->profile;version=state->version.load();if(position)*position=state->profilePosition;return true;
+    dest=state->profile;version=state->version.load();if(position)*position=state->profilePosition;if(projectSeconds)*projectSeconds=state->profileProjectSeconds;return true;
 }
 NoiseProfile ReferenceLearner::snapshot() const {const juce::SpinLock::ScopedLockType lock(state->profileLock);return ready()?state->profile:NoiseProfile{};}
 bool ReferenceLearner::ready() const{return state->publishedGeneration.load()>=state->minimumGeneration.load();}

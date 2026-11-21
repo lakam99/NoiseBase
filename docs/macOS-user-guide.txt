@@ -46,6 +46,21 @@ UPDATES checks GitHub Releases; installing Mac updates is manual through the
 release download page. No audio is uploaded. Audio processing needs no account,
 network connection or API key. Windows' PowerShell installer is not used on Mac.
 
+SAVED LIVE PROFILE CACHE
+Save your DAW song after learning. Each NoiseBase instance stores its live CLEAN
+floor and sidechain cache in the plug-in state inside that song. Reopening the
+saved song restores those profiles with AUTO still enabled. AUTO recalls known
+timeline regions and keeps adapting to new or changed backgrounds. LEARN clears
+the selected source's cache and rebuilds it as audio arrives; with a loaded file,
+it still rescans the entire file. A VST3 cannot analyze unplayed host audio.
+
+Up to 64 regions per source contain statistical spectra and ambience properties,
+not recorded audio. No external cache file or recording edits are required.
+NoiseBase tells the host when learned state changes so it can save that state.
+The VFD shows the cached-region count. Moving/replacing clips can need new
+learning at their new timeline positions. Cached sidechain profiles still obey
+playback/input gating and the BRIDGE delay when enabled.
+
 VST3 SIDECHAIN REFERENCE
 Put NoiseBase on an ambience track/bus that your DAW keeps processing. Enable
 its Reference sidechain in the DAW and send another track to that input. Select
@@ -58,8 +73,9 @@ The main input remains the source for CLEAN/REMOVED and bypass.
 Generation follows host playback and reference activity. Stop, a disconnected
 send or digital silence fades output out; incoming reference during playback
 resumes it. HOLD freezes texture while following input/transport. AUTO seeks or
-loop wraps discard old-location analysis and wait for fresh quiet background;
-HOLD keeps its model. Saved state retains the model, but also waits for reference.
+loop wraps recall cached destinations; unknown regions wait for fresh quiet
+background. HOLD keeps its model. Saved state retains the profile cache, but
+also waits for reference.
 The input meter/numeric VFD level show the sidechain; host position/play/stop
 appear when supplied. Offline rendering follows actual reference input, and
 hosts without transport information use input activity. CLIP remains continuous.

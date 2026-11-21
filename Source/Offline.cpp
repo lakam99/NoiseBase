@@ -1,5 +1,6 @@
 #include "Offline.h"
 #include "ReferenceLearner.h"
+#include "ProfileCache.h"
 
 namespace {
 std::unique_ptr<juce::AudioFormatReader> openReader(const juce::File& file) {
@@ -201,6 +202,7 @@ juce::var runEngineTests() {
     auto trackTests=runTrackTests();passed &= (bool)trackTests["passed"];report->setProperty("whole_track",trackTests);
     auto hostTests=runHostSafetyTests();passed &= (bool)hostTests["passed"];report->setProperty("host_safety",hostTests);
     auto referenceTests=runReferenceTests();passed &= (bool)referenceTests["passed"];report->setProperty("external_reference",referenceTests);
+    auto cacheTests=runCacheTests();passed &= (bool)cacheTests["passed"];report->setProperty("session_cache",cacheTests);
     report->setProperty("procedural",proceduralTests);
     report->setProperty("passed",passed); report->setProperty("unity_latency_tests",results);report->setProperty("noise_only",noiseTests); return juce::var(report);
 }

@@ -9,10 +9,10 @@ public:
     ReferenceLearner();
     ~ReferenceLearner();
     void prepare(double sampleRate);
-    void push(const juce::AudioBuffer<float>&,int64_t sourcePosition=-1);
+    void push(const juce::AudioBuffer<float>&,int64_t sourcePosition=-1,double projectSeconds=std::numeric_limits<double>::quiet_NaN());
     void reset(); // audio-thread request; clears the learned reference
     void breakStream(); // discard queued/partial analysis, retain the learned model
-    bool readProfile(NoiseProfile&,uint64_t& version,int64_t* position=nullptr,bool currentStreamOnly=false); // nonblocking, preallocate destination
+    bool readProfile(NoiseProfile&,uint64_t& version,int64_t* position=nullptr,bool currentStreamOnly=false,double* projectSeconds=nullptr); // nonblocking, preallocate destination
     NoiseProfile snapshot() const; // state saving/export, never called by audio
     bool ready() const;
     bool failed() const;
