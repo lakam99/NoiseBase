@@ -8,11 +8,11 @@ Automatic dialogue denoising and procedural ambience for Windows x64 and Apple S
 
 NoiseBase learns persistent background noise from pauses in speech and applies spectral noise reduction. A local Silero voice activity detector helps keep speech out of the noise profile. Audio processing runs on your computer without an account, API key, or upload.
 
-The standalone application scans an entire recording before preview or export. The VST3 learns from the audio played through it; select **HOLD** to freeze a learned profile.
+The standalone application scans the entire recording and follows different backgrounds across stitched clips during preview and export. The VST3 automatically follows noise changes in the audio played through it. Select **HOLD** to freeze the current profile.
 
 ## Features
 
-- Automatic noise profiling with speech-aware learning.
+- Automatic whole-file noise profiling, with local profiles for changing backgrounds and speech-aware live adaptation.
 - Reduction, voice detail, dry/clean blend, output trim, and latency-aligned bypass.
 - Continuous procedural ambience from one reference clip, saved with the session.
 - Removed-noise monitoring, plus procedural seamless-loop and noise-base WAV export.
@@ -35,7 +35,7 @@ Run `Install-NoiseBase.ps1` from the extracted `NoiseBase` folder. It installs t
 
 For standalone use, launch **NoiseBase** from Start. Choose **LOAD CLIP**, wait for the automatic scan, then **PLAY** and adjust the controls. **PRINT WAV** writes the selected output and preserves the source. Portable use through `Standalone/NoiseBase.exe` is also supported; keep all bundled DLLs and helper scripts beside it. In-app installation requires an installed copy.
 
-The installer also installs the VST3. Alternatively, copy the entire `VST3/NoiseBase.vst3` directory into a VST3 plug-in folder. Restart or rescan the DAW. Leave **AUTO** selected while playing a passage containing a pause, then use **HOLD** if needed. **LEARN** clears the profile and starts learning again.
+The installer also installs the VST3. Alternatively, copy the entire `VST3/NoiseBase.vst3` directory into a VST3 plug-in folder. Restart or rescan the DAW. Leave **AUTO** selected: learning starts automatically and follows stable changes during speech pauses. **HOLD** keeps the active floor fixed. With a loaded file, **LEARN** re-analyzes the entire file and selects AUTO again. Without a loaded file, it resets learning from incoming DAW audio. A conventional VST3 cannot read future or unplayed host audio; use **LOAD CLIP** to scan a complete file for file export.
 
 The application is installed at `%LOCALAPPDATA%/Programs/NoiseBase`; the VST3 goes to `%LOCALAPPDATA%/Programs/Common/VST3/NoiseBase.vst3`. Add the latter's parent folder to your DAW's plug-in locations if necessary. VST3 backups are retained outside that scan folder. The installer verifies payload hashes, protects unowned directories, refuses downgrades and in-use files, and rolls back failed file swaps. See the [Windows user guide](docs/Windows-user-guide.txt).
 
@@ -59,7 +59,7 @@ The generated cyan/glass icon is embedded in the app, taskbar window and Windows
 
 ## Automatic updates
 
-The standalone app checks [GitHub Releases](https://github.com/lakam99/NoiseBase/releases) on startup, at most daily after a successful check. **UPDATES** offers a manual check and an automatic-check toggle. A newer stable version offers **Download update**, then **Install and restart** after verification. Installation preserves settings and keeps the preceding version as a backup. Close DAWs using the VST3 before installing. The VST3 itself does not check the network or replace loaded modules.
+The standalone app checks [GitHub Releases](https://github.com/lakam99/NoiseBase/releases) on startup, at most daily after a successful check. **UPDATES** offers a manual check and an automatic-check toggle. On Windows, a newer stable version offers **Download update**, then **Install and restart** after verification. The VFD shows a segmented download bar and percentage, followed by an activity indicator while verifying and unpacking. Installation preserves settings and keeps the preceding version as a backup. Close DAWs using the VST3 before installing. The VST3 itself does not check the network or replace loaded modules.
 
 Downloads must match GitHub's SHA-256 asset digest, `SHA256SUMS.txt`, and every payload file in `release-manifest.json`. Paths and package identity are checked before installation. These checks detect corruption; release authenticity depends on HTTPS and this repository's security. Releases are not Authenticode-signed.
 
@@ -94,9 +94,7 @@ The build copies the required runtime DLLs alongside both formats. See [BUILDING
 
 ## Verification and limits
 
-The Windows build passed engine timing/bypass/stereo checks at 44.1, 48, and 96 kHz, VST3 discovery/loading/state/editor creation and audio processing in a JUCE host, and the standalone load/scan/preview/export workflow. An independent visual critic reviewed all three native skin renders and the loaded recording state. The 1.1.0 audio renders matched 1.0.0 sample for sample on the validation excerpt.
-
-See the [verification report](docs/Verification-1.1.0.json) and [visual review](docs/Visual-review-1.1.0.txt). Studio One and physical audio devices have not been tested.
+Release verification covers engine timing/bypass/stereo checks at 44.1, 48, and 96 kHz, stitched-background scans, VST3 loading/state/editor creation and repeated removal, delayed speech-worker cleanup, and the standalone load/scan/preview/export workflow. An independent visual critic reviewed the native skins and VFD update progress. See the [1.6.0 release notes](docs/Release-1.6.0.md); native reports are included in release packages. The reported Studio Pro freeze has not been reproduced in that DAW, and physical audio devices have not been certified by these tests.
 
 Reported latency is 2048 samples at 44.1/48 kHz and 4096 samples at 96 kHz; standalone file export compensates this delay. This processor targets dialogue with persistent background noise. Strong wind impacts, clipping, and overlapping voices may remain. Large reduction settings can soften speech, so audition the result.
 

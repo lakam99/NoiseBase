@@ -69,7 +69,9 @@ NoiseBaseEditor::NoiseBaseEditor(NoiseBaseProcessor& p):AudioProcessorEditor(p),
     proceduralAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(p.params,"procedural",procedural);
     noiseOnly.setTooltip("Select noise-base output or cleaned recording. Bypass restores the original.");
     procedural.setTooltip("PROCEDURAL generates continuous fresh ambience from a loaded clip's quiet-frame statistics. REMOVED monitors the denoiser residual, which can include speech.");
-    reset.onClick=[this]{processor.params.getParameter("auto")->setValueNotifyingHost(1);processor.resetProfile();};
+    reset.onClick=[this]{processor.learnTrack();};
+    reset.setTooltip("Re-analyze the entire loaded track. For live DAW audio, restart automatic learning as the host plays.");
+    automatic.setTooltip("Automatically follow background changes throughout the track. HOLD freezes the current noise floor.");
     for(auto* c:{&load,&scan,&save})addAndMakeVisible(c);
     load.setButtonText("LOAD CLIP");load.setTooltip("Learn a procedural profile from a mono/stereo reference clip; saved profiles work without the original file");
     load.onClick=[this]{openFile();};scan.onClick=[this]{processor.scanRecording();};save.onClick=[this]{exportFile();};
@@ -139,7 +141,7 @@ void NoiseBaseEditor::paint(juce::Graphics& g) {
         engraved(g,units[i],{x-8,459,136,16},look.ink().withAlpha(.85f),9);
     }
     bool learned=processor.quietSeconds.load()>=.35f;
-    juce::String live=learned?"FLOOR LEARNED":"AUTO LEARNING  /  waiting for a pause";
+    juce::String live=automatic.getToggleState()?(learned?"AUTO TRACK / FOLLOWING NOISE CHANGES":"AUTO TRACK / WAITING FOR QUIET BACKGROUND"):"HOLD / FIXED NOISE FLOOR";
     if(!processor.detectorAvailable.load())live="SPEECH DETECTOR  /  warming up";
     if(processor.detectorFailed.load())live="DETECTOR UNAVAILABLE  /  restore the runtime files";
     bool standalone=processor.standaloneMode.load();
@@ -151,10 +153,16 @@ void NoiseBaseEditor::paint(juce::Graphics& g) {
     {
         if((standalone&&(!generated||processor.fileMode.load()))||processor.busy.load()||processor.ambienceReady.load())live=processor.getStatus();
         if(processor.busy.load())live+="  "+juce::String((int)(processor.jobProgress.load()*100))+"%";
-        else if(updateBusy)live=downloadingUpdate?"DOWNLOADING AND VERIFYING UPDATE":"CHECKING GITHUB RELEASES";
+        else if(updateBusy)live="CHECKING GITHUB RELEASES";
         else if(standalone&&(processor.fileMode.load()||processor.ambienceReady.load()))live=(processor.isPlaying()?"PLAY  | ":!generated&&processor.playbackPosition()>=processor.playbackDuration()-.001?"END   | ":processor.playbackPosition()>0?"PAUSE | ":"STOP  | ")+live+(!generated&&processor.isLooping()?" | LOOP ON":"");
         displayLines[0].draw(g,controls,{82,495,796,17},1.65f,false);
-        displayLines[1].draw(g,routing+" | "+live,{82,518,796,17});
+        if(updateBusy&&downloadingUpdate){
+            auto progress=onUpdateProgress?onUpdateProgress():std::pair<double,juce::String>{-1,"PREPARING"};
+            displayLines[1].draw(g,"UPDATE / "+progress.second,{82,518,203,17},1.35f,false);
+            constexpr int segments=48;int filled=(int)(juce::jlimit(0.0,1.0,progress.first)*segments);int cursor=(int)(juce::Time::getMillisecondCounter()/55)%segments;
+            for(int i=0;i<segments;++i){bool lit=progress.first>=0?i<filled:(i-cursor+segments)%segments<6;g.setColour(lit?juce::Colour(0xffa4ffe9):juce::Colour(0xff245849));g.fillRect(295.0f+i*10.1f,522.0f,7.7f,8.0f);}
+            displayLines[4].draw(g,progress.first>=0?juce::String((int)(juce::jlimit(0.0,1.0,progress.first)*100))+"%":"...",{803,518,75,17},1.65f,false);
+        }else displayLines[1].draw(g,routing+" | "+live,{82,518,796,17});
         displayLines[2].draw(g,processor.fileMode.load()||processor.ambienceReady.load()?processor.getFileName():"NO CLIP PROFILE LOADED",{82,543,558,17});
         auto time=[](double value){int seconds=(int)std::max(0.0,value);return juce::String(seconds/60).paddedLeft('0',2)+":"+juce::String(seconds%60).paddedLeft('0',2);};
         displayLines[3].draw(g,standalone?(generated?time(processor.playbackPosition())+" / INF":time(processor.playbackPosition())+" / "+time(processor.playbackDuration())):"HOST CLOCK",{683,543,195,17},1.65f,false);
@@ -173,11 +181,12 @@ void NoiseBaseEditor::resized() {
     }
 }
 void NoiseBaseEditor::timerCallback() {
+    processor.serviceJobs();
     int next=juce::jlimit(0,2,(int)std::round(processor.params.getRawParameterValue("skin")->load()));
     if(next!=look.skin){look.skin=next;sendLookAndFeelChange();}
     inputNeedle=.78f*inputNeedle+.22f*processor.inputLevel.load();outputNeedle=.78f*outputNeedle+.22f*processor.outputLevel.load();reductionNeedle=.78f*reductionNeedle+.22f*processor.reductionLevel.load();
     bool busy=processor.busy.load(),generated=processor.proceduralSelected()&&!bypass.getToggleState();load.setEnabled(!busy);scan.setEnabled(!busy&&processor.fileMode.load());save.setEnabled(!busy&&(generated?processor.ambienceReady.load():processor.analysed.load()));
-    reduction.setEnabled(!generated);preserve.setEnabled(!generated);automatic.setEnabled(!generated);reset.setEnabled(!generated);
+    reduction.setEnabled(!generated);preserve.setEnabled(!generated);automatic.setEnabled(!generated);reset.setEnabled(!busy&&(!generated||processor.fileMode.load()));
     for(auto* button:{&play,&stop,&beginning})button->setEnabled(generated?processor.ambienceReady.load():processor.fileMode.load());
     loop.setEnabled(!generated&&processor.fileMode.load());
     auto transportId=processor.isPlaying()?"transport-pause":"transport-play";

@@ -33,6 +33,8 @@ Utilities supported by NoiseBase.exe (file paths can be quoted):
   --render-ui plugin-faceplate.png --plugin-layout --skin 0 --report render.json
   --render-ui noise-mode.png --noise-only --skin 0 --report render.json
   --render-ui procedural-mode.png --procedural --skin 0 --report render.json
+  --render-ui downloading.png --update-progress 0.42 --skin 2 --report render.json
+  --render-ui verifying.png --update-progress -1 --update-phase VERIFYING --report render.json
   --validate-plugin NoiseBase.vst3 --report validation.json
   --ui-smoke input.wav new-output.wav --snapshot loaded.png --report workflow.json
 

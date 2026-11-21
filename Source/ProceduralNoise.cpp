@@ -62,10 +62,10 @@ void ProceduralNoise::frame(){
             data[(size_t)c][(size_t)k*2+1]=k==size/2?0:amplitude*(c==0?imag:rho*imag+independent*otherImag);
         }
     }
-    for(int c=0;c<channels;++c){fft->performRealOnlyInverseTransform(data[(size_t)c].data());for(int i=0;i<size;++i)overlap[(size_t)c][(size_t)((position+i)%capacity)]+=data[(size_t)c][(size_t)i]*window[(size_t)i];}
+    for(int c=0;c<channels;++c){fft->performRealOnlyInverseTransform(data[(size_t)c].data());for(int i=0;i<size;++i)overlap[(size_t)c][(size_t)((position+i)&(capacity-1))]+=data[(size_t)c][(size_t)i]*window[(size_t)i];}
 }
 void ProceduralNoise::next(float* samples){
     if(countdown==0){frame();countdown=hop;}
     for(int c=0;c<channels;++c){samples[c]=overlap[(size_t)c][(size_t)position];overlap[(size_t)c][(size_t)position]=0;}
-    position=(position+1)%capacity;--countdown;
+    position=(position+1)&(capacity-1);--countdown;
 }

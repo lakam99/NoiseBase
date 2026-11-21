@@ -1,4 +1,5 @@
 #include "VoiceDetector.h"
+#include "AsyncCleanup.h"
 #include <juce_dsp/juce_dsp.h>
 #include "BinaryData.h"
 #define ORT_API_MANUAL_INIT
@@ -43,26 +44,23 @@ void initialiseRuntime() {
        #endif
     });
 }
-Ort::Env& environment(){
-    initialiseRuntime();
-    // Register this destructor after dlopen's runtime/logger destructors. A
-    // namespace-scope owner is registered before the library is loaded and can
-    // release its Env after the runtime's logging mutex has already gone away.
-    static auto env=[] {auto value=std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_ERROR,"NoiseBase");value->DisableTelemetryEvents();return value;}();
-    return *env;
-}
 }
 
 struct VoiceDetector::Impl {
+    // Release sessions and the environment on their owning analysis worker,
+    // never from a plugin module's global destructors under the loader lock.
+    Ort::Env env{nullptr};
     Ort::Session session{nullptr};
     Ort::MemoryInfo memory{nullptr};
     std::array<float,576> input{};
     std::array<float,256> state{};
     std::array<float,64> context{};
     Impl() {
-        auto& env=environment();
+        initialiseRuntime();env=Ort::Env(ORT_LOGGING_LEVEL_ERROR,"NoiseBase");env.DisableTelemetryEvents();
         Ort::SessionOptions options;
         options.SetIntraOpNumThreads(1); options.SetInterOpNumThreads(1);
+        options.AddConfigEntry("session.intra_op.allow_spinning","0");
+        options.AddConfigEntry("session.inter_op.allow_spinning","0");
         options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
         session=Ort::Session(env,BinaryData::silero_vad_onnx,(size_t)BinaryData::silero_vad_onnxSize,options);
         memory=Ort::MemoryInfo::CreateCpu(OrtArenaAllocator,OrtMemTypeDefault);
@@ -89,47 +87,76 @@ float VoiceDetector::analyse(const float* frame) {
     return juce::jlimit(0.0f,1.0f,result[0].GetTensorData<float>()[0]);
 }
 
-VoiceWorker::VoiceWorker():Thread("NoiseBase speech detector") {}
-VoiceWorker::~VoiceWorker(){ stopThread(5000); }
-void VoiceWorker::prepare(double sr) {
-    stopThread(5000); rate=sr; phase=0; fifo.reset(); probability.store(1); available.store(false);failed.store(false);
-    lowpass.coefficients=juce::dsp::IIR::Coefficients<float>::makeLowPass(sr,std::min(6500.0,sr*.40));
-    lowpass.reset(); startThread();
+
+struct VoiceWorker::State {
+    struct Frame {std::array<float,512> samples{};uint64_t generation=0,ticket=0;};
+    juce::AbstractFifo fifo{8};
+    std::array<Frame,8> frames;
+    std::atomic<uint64_t> generation{0},produced{0},processed{0},processedGeneration{0};
+    std::atomic<float> probability{1};
+    std::atomic<bool> available{false},failed{false},stalled{false};
+    std::atomic<int> modelLoads{0},testDelay{0},testCleanupDelay{0};
+};
+struct VoiceWorker::Worker final:juce::Thread {
+    explicit Worker(std::shared_ptr<State> value):Thread("NoiseBase speech detector"),state(std::move(value)){}
+    void run() override {
+        try {
+            int delay=state->testDelay.exchange(0);
+            if(delay>0){state->stalled.store(true);sleep(delay);state->stalled.store(false);}
+            if(threadShouldExit())return;
+            VoiceDetector detector; ++state->modelLoads;state->available.store(true);
+            uint64_t generation=0;
+            while(!threadShouldExit()) {
+                if(state->fifo.getNumReady()<1){wait(2);continue;}
+                int a,n1,b,n2;state->fifo.prepareToRead(1,a,n1,b,n2);
+                auto frame=state->frames[(size_t)a];state->fifo.finishedRead(1);
+                if(frame.generation!=state->generation.load()||frame.ticket+2<state->produced.load()){generation=0;continue;}
+                if(generation!=frame.generation){detector.reset();generation=frame.generation;}
+                float probability=detector.analyse(frame.samples.data());
+                if(frame.generation==state->generation.load()&&frame.ticket+2>=state->produced.load()){state->probability.store(probability);state->processed.store(frame.ticket);state->processedGeneration.store(frame.generation);}
+            }
+            // Detector/session/environment cleanup completes here, on this
+            // worker, before the thread exits. The host never releases ONNX.
+            int cleanupDelay=state->testCleanupDelay.exchange(0);
+            if(cleanupDelay>0){state->stalled.store(true);sleep(cleanupDelay);state->stalled.store(false);}
+        }catch(...){state->available.store(false);state->failed.store(true);state->probability.store(1);}
+    }
+    std::shared_ptr<State> state;
+};
+VoiceWorker::VoiceWorker():state(std::make_shared<State>()){}
+VoiceWorker::~VoiceWorker(){
+    if(!worker)return;
+    worker->signalThreadShouldExit();worker->notify();
+    if(!worker->waitForThreadToExit(100)){
+        auto* remaining=worker.release();
+        deferNoiseBaseCleanup([remaining]{remaining->waitForThreadToExit(-1);delete remaining;});
+    }
 }
-void VoiceWorker::push(const juce::AudioBuffer<float>& buffer) {
-    int channel=0;
-    if(buffer.getNumChannels()>1 && buffer.getRMSLevel(1,0,buffer.getNumSamples())>buffer.getRMSLevel(0,0,buffer.getNumSamples())) channel=1;
-    auto* data=buffer.getReadPointer(channel);
-    for(int i=0;i<buffer.getNumSamples();++i) {
-        float filtered=lowpass.processSample(data[i]);
-        phase+=16000/rate;
-        while(phase>=1) {
-            phase-=1;
-            int a,n1,b,n2; fifo.prepareToWrite(1,a,n1,b,n2);
-            if(n1) { samples[(size_t)a]=filtered; fifo.finishedWrite(1); }
+void VoiceWorker::prepare(double sr){
+    rate=sr;lowpass.coefficients=juce::dsp::IIR::Coefficients<float>::makeLowPass(sr,std::min(6500.0,sr*.40));resetHistory();
+    if(!worker||!worker->isThreadRunning()){
+        worker.reset();state->available.store(false);state->failed.store(false);
+        worker=std::make_unique<Worker>(state);worker->startThread();
+    }
+}
+void VoiceWorker::resetHistory(){phase=0;fill=0;lowpass.reset();++state->generation;state->probability.store(1);}
+void VoiceWorker::push(const juce::AudioBuffer<float>& buffer){
+    if(buffer.getNumChannels()==0)return;
+    int channel=buffer.getNumChannels()>1&&buffer.getRMSLevel(1,0,buffer.getNumSamples())>buffer.getRMSLevel(0,0,buffer.getNumSamples())?1:0;
+    auto* samples=buffer.getReadPointer(channel);
+    for(int i=0;i<buffer.getNumSamples();++i){float filtered=lowpass.processSample(samples[i]);phase+=16000/rate;
+        while(phase>=1){phase-=1;frame[(size_t)fill++]=filtered;
+            if(fill==512){fill=0;auto ticket=++state->produced;int a,n1,b,n2;state->fifo.prepareToWrite(1,a,n1,b,n2);
+                if(n1){auto& destination=state->frames[(size_t)a];destination.samples=frame;destination.generation=state->generation.load();destination.ticket=ticket;state->fifo.finishedWrite(1);}
+                else state->probability.store(1); // Never wait or learn from an obsolete speech decision.
+            }
         }
     }
 }
-void VoiceWorker::run() {
-    try {
-        VoiceDetector detector; std::array<float,512> frame{}; available.store(true);
-        while(!threadShouldExit()) {
-            if(fifo.getNumReady()<512) { wait(2); continue; }
-            inFlight.store(true);
-            int a,n1,b,n2; fifo.prepareToRead(512,a,n1,b,n2);
-            std::copy_n(samples.begin()+a,n1,frame.begin());
-            if(n2) std::copy_n(samples.begin()+b,n2,frame.begin()+n1);
-            fifo.finishedRead(n1+n2);
-            probability.store(detector.analyse(frame.data()),std::memory_order_relaxed);
-            inFlight.store(false);
-        }
-    } catch(...) { available.store(false); failed.store(true);probability.store(1); }
-    inFlight.store(false);
-}
-void VoiceWorker::waitForPending() {
-    auto deadline=juce::Time::getMillisecondCounter()+5000;
-    while(isThreadRunning() && (!available.load() || fifo.getNumReady()>=512 || inFlight.load())) {
-        if(juce::Time::getMillisecondCounter()>deadline)break;
-        juce::Thread::sleep(1);
-    }
-}
+float VoiceWorker::probability() const{return state->processedGeneration.load()==state->generation.load()&&state->processed.load()+2>=state->produced.load()?state->probability.load():1.0f;}
+bool VoiceWorker::available() const{return state->available.load();}
+bool VoiceWorker::failed() const{return state->failed.load();}
+int VoiceWorker::modelLoads() const{return state->modelLoads.load();}
+void VoiceWorker::delayStartupForTest(int milliseconds){state->testDelay.store(milliseconds);}
+void VoiceWorker::delayCleanupForTest(int milliseconds){state->testCleanupDelay.store(milliseconds);}
+bool VoiceWorker::stalledForTest() const{return state->stalled.load();}

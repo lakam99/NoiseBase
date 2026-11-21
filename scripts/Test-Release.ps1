@@ -12,6 +12,8 @@ function Invoke-Check([string[]]$Arguments,[string]$Report) {
 }
 Invoke-Check @('--self-test') (Join-Path $folder 'engine.json')
 Invoke-Check @('--theme-test') (Join-Path $folder 'window-theme-icon.json')
+Invoke-Check @('--render-ui',(Join-Path $folder 'update-downloading.png'),'--skin','2','--update-progress','0.42') (Join-Path $folder 'update-downloading.json')
+Invoke-Check @('--render-ui',(Join-Path $folder 'update-verifying.png'),'--skin','2','--update-progress','-1','--update-phase','VERIFYING') (Join-Path $folder 'update-verifying.json')
 Invoke-Check @('--validate-plugin',$plugin,'--snapshot',(Join-Path $Build 'host-wrapper.png')) (Join-Path $folder 'vst3.json')
 $fixture=Join-Path $Build 'fixture.wav'
 @'

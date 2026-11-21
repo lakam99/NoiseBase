@@ -1,4 +1,4 @@
-NOISEBASE 1.5.2 - WINDOWS x64
+NOISEBASE 1.6.0 - WINDOWS x64
 Automatic dialogue denoising, with an analog hardware-style interface.
 
 IN THIS PACKAGE
@@ -36,8 +36,9 @@ is remembered between standalone launches.
 
 1. Run Standalone/NoiseBase.exe.
 2. LOAD CLIP, or drop a recording onto the faceplate. The app scans it
-   automatically for speech-free sections and builds a noise profile.
-3. When PROFILE READY appears, press the play triangle. Use BYPASS for a level-aware comparison.
+   automatically across its full duration and builds local noise profiles for
+   different backgrounds. AUTO follows those regions during preview/export.
+3. When TRACK READY appears, press the play triangle. Use BYPASS for a level-aware comparison.
 4. Adjust REDUCTION, VOICE DETAIL, DRY/CLEAN and OUTPUT TRIM.
 5. PRINT WAV saves a denoised copy. The source cannot be overwritten.
 
@@ -63,7 +64,9 @@ Close NoiseBase and DAWs using the VST3 before manually upgrading.
 
 The standalone app checks GitHub Releases on startup, at most once daily after
 a successful check. UPDATES offers a manual check and an automatic-check toggle.
-New stable versions offer Download update, then Install and restart. Packages
+New stable versions offer Download update, then Install and restart. The VFD
+shows a segmented download bar with percentage, then an activity indicator
+while verifying and unpacking. Packages
 must match GitHub's asset SHA-256 digest, SHA256SUMS.txt and per-file payload
 hashes. HTTPS and repository security establish trust; releases are not
 Authenticode-signed. No audio is sent to GitHub. The VST3 itself never checks
@@ -115,9 +118,11 @@ The DAW controls the outer frame of a hosted VST3 editor.
 
 LIVE OPERATION
 Insert NoiseBase on a dialogue channel. Leave AUTO selected while playing
-material that includes a short pause; the floor indicator turns green once
-enough noise has been learned. Select HOLD to keep the profile fixed. LEARN
-resets it and selects AUTO again. Noise learning is intentionally conservative
+material that includes a short pause; learning starts automatically and follows
+stable background changes. The floor indicator turns green once enough noise
+has been learned. Select HOLD to keep the active profile fixed. With a loaded
+file, LEARN re-analyzes the whole file and selects AUTO again. Without one,
+LEARN resets incoming audio learning. Noise learning is intentionally conservative
 during speech. Until a reliable floor is available, reduction is capped at
 6 dB. The stand-alone file scanner can look across the whole recording before
 processing; a conventional VST3 only receives the audio played through it.
@@ -128,7 +133,7 @@ CONTROLS
   DRY / CLEAN     Blend original and denoised audio at matching latency.
   OUTPUT TRIM     -12 to +12 dB; true bypass ignores this trim.
   AUTO / HOLD     Adapt from non-speech, or freeze the current noise floor.
-  LEARN           Clear and relearn the floor.
+  LEARN           Re-analyze the whole loaded file, or reset incoming learning.
   BYPASS / IN     Switch between unchanged and processed audio.
   FACEPLATE       Three-position skin selector. No change to audio character.
 
@@ -152,7 +157,10 @@ The included verification report covers VST3 discovery/loading, parameter state,
 editor creation, several sample rates/block sizes, bypass/timing, and the
 stand-alone load/automatic scan/preview/export workflow. Tested on the supplied
 lav excerpt with mono 44.1 kHz/24-bit export and zero sample shift. This build
-has not been tested inside Studio One itself, or on physical audio hardware.
+has not reproduced the reported Studio Pro freeze inside that DAW, and has not
+been certified on physical audio hardware. Tests include repeated VST3 removal
+and deliberately delayed speech-worker startup/cleanup. Removed plug-ins can
+remain mapped until the DAW exits so background cleanup can finish safely.
 
 SOURCE AND LICENCES
 This build uses JUCE under the AGPLv3 option. Corresponding source is included

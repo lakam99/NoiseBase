@@ -14,21 +14,28 @@ private:
     std::unique_ptr<Impl> impl;
 };
 
-class VoiceWorker : private juce::Thread {
+class VoiceWorker {
 public:
     VoiceWorker();
-    ~VoiceWorker() override;
+    ~VoiceWorker();
     void prepare(double sr);
+    void resetHistory();
     void push(const juce::AudioBuffer<float>&);
-    void waitForPending();
-    std::atomic<float> probability{1};
-    std::atomic<bool> available{false};
-    std::atomic<bool> failed{false};
+    float probability() const;
+    bool available() const;
+    bool failed() const;
+    int modelLoads() const;
+    // Deterministic native lifecycle verification; not a host parameter.
+    void delayStartupForTest(int milliseconds);
+    void delayCleanupForTest(int milliseconds);
+    bool stalledForTest() const;
 private:
-    void run() override;
-    juce::AbstractFifo fifo{32768};
-    std::array<float,32768> samples{};
+    struct State;
+    struct Worker;
+    std::shared_ptr<State> state;
+    std::unique_ptr<Worker> worker;
+    std::array<float,512> frame{};
+    int fill=0;
     double rate=48000, phase=0;
     juce::dsp::IIR::Filter<float> lowpass;
-    std::atomic<bool> inFlight{false};
 };

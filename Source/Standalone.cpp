@@ -2,6 +2,7 @@
 #include "Editor.h"
 #include "Updater.h"
 #include "OsTheme.h"
+#include "AsyncCleanup.h"
 #include <fstream>
 #include <cstdio>
 #if JUCE_MAC
@@ -25,6 +26,7 @@ public:
         processor.setLooping(preferences->getBoolValue("tapeLoop",false));
         editor=std::make_unique<NoiseBaseEditor>(processor);
         editor->onUpdates=[this]{showUpdatesMenu();};
+        editor->onUpdateProgress=[this]{return std::pair<double,juce::String>{updater.progress.load(),updater.progressStage()};};
         editor->onDevices=[this]{
             auto selector=std::make_unique<juce::AudioDeviceSelectorComponent>(deviceManager,0,2,0,2,false,false,true,false);
             selector->setSize(500,420);
@@ -188,6 +190,20 @@ juce::var validatePlugin(const juce::File& file,const juce::File& snapshot,const
     stage("saved procedural profile passed");
     report->setProperty("procedural_profile_saved_and_restored_in_vst3",true);report->setProperty("procedural_silent_host_runs",generatedRuns);
     plugin->setStateInformation(saved.getData(),(int)saved.getSize());
+    double peakUndo=0,peakCallback=0;bool undoFinite=true;
+    for(int cycle=0;cycle<16;++cycle){
+        auto trial=format.createInstanceFromDescription(*descriptions[0],48000,64,error);if(!trial)throw std::runtime_error("VST3 lifecycle instance could not be created.");
+        trial->setStateInformation(hostSaved.getData(),(int)hostSaved.getSize());
+        for(auto* parameter:trial->getParameters())if(parameter->getName(128)=="Noise only")parameter->setValueNotifyingHost(0);
+        trial->setNonRealtime(cycle%2!=0);trial->setRateAndBufferSizeDetails(48000,64);trial->prepareToPlay(48000,64);
+        for(int block=0;block<24;++block){juce::AudioBuffer<float> audio(2,64);juce::MidiBuffer midi;for(int c=0;c<2;++c)for(int i=0;i<64;++i)audio.setSample(c,i,.02f*std::sin((float)(block*64+i)*.037f));auto begin=juce::Time::getMillisecondCounterHiRes();trial->processBlock(audio,midi);peakCallback=std::max(peakCallback,juce::Time::getMillisecondCounterHiRes()-begin);for(int i=0;i<64;++i)undoFinite&=std::isfinite(audio.getSample(0,i));}
+        {std::unique_ptr<juce::AudioProcessorEditor> view(trial->createEditorIfNeeded());if(!view)throw std::runtime_error("VST3 lifecycle editor could not be created.");}
+        juce::MemoryBlock undoState;trial->getStateInformation(undoState);trial->setStateInformation(undoState.getData(),(int)undoState.getSize());trial->releaseResources();
+        auto begin=juce::Time::getMillisecondCounterHiRes();trial.reset();peakUndo=std::max(peakUndo,juce::Time::getMillisecondCounterHiRes()-begin);
+    }
+    if(!undoFinite||peakUndo>1000||peakCallback>100)throw std::runtime_error("VST3 lifecycle or callback deadline verification failed.");
+    report->setProperty("add_learned_state_undo_cycles",16);report->setProperty("peak_undo_ms",peakUndo);report->setProperty("peak_callback_ms",peakCallback);
+    stage("rapid add, learned-state restore and undo passed");
     if(input.existsAsFile()) {
         juce::AudioFormatManager formats;formats.registerBasicFormats();
         std::unique_ptr<juce::AudioFormatReader> reader(formats.createReaderFor(input));
@@ -253,12 +269,16 @@ juce::var testFileDeck(const juce::File& source,const juce::File& output,const j
     auto waitForJob=[&]{
         auto deadline=juce::Time::getMillisecondCounter()+30000;
         while(processor.busy.load()) {
+            processor.serviceJobs();
             juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
             if(juce::Time::getMillisecondCounter()>deadline)throw std::runtime_error("File deck timed out.");
         }
     };
     waitForJob();
     if(!processor.analysed.load())throw std::runtime_error(processor.getStatus().toStdString());
+    processor.params.getParameter("auto")->setValueNotifyingHost(0);processor.learnTrack();bool rescanStarted=processor.busy.load();waitForJob();
+    bool fullRescan=rescanStarted&&processor.analysed.load()&&processor.noiseRegionCount.load()>0&&processor.params.getRawParameterValue("auto")->load()>.5f;
+    if(!fullRescan)throw std::runtime_error("LEARN did not re-analyze the whole loaded recording in AUTO.");
     // Verify the loop junction against independent reads of the original file.
     juce::AudioFormatManager formats;formats.registerBasicFormats();
     std::unique_ptr<juce::AudioFormatReader> reference(formats.createReaderFor(source));
@@ -349,6 +369,7 @@ juce::var testFileDeck(const juce::File& source,const juce::File& output,const j
     report->setProperty("sample_exact_loop_junction",exactLoop);report->setProperty("return_to_start_keeps_pause",rewindPaused);report->setProperty("return_to_start_keeps_play",rewindPlaying);
     report->setProperty("loop_repeats_past_eof",repeats);report->setProperty("loop_off_stops_at_eof",eofStops);
     report->setProperty("legacy_preset_restores_clean",legacyClean);report->setProperty("noise_export_preserves_timing_layout",noiseExportSaved);report->setProperty("clean_plus_noise_export_error",reconstruction);
+    report->setProperty("learn_reanalyzes_whole_loaded_file",fullRescan);
     report->setProperty("procedural_profile_restores_without_source",true);report->setProperty("procedural_output_on_silent_host",generatedEnergy>0);report->setProperty("procedural_continues_beyond_source_duration",true);report->setProperty("procedural_export_duration",3);
     report->setProperty("status",processor.getStatus());return juce::var(report);
 }
@@ -405,6 +426,10 @@ public:
                     processor.params.getParameter("noiseOnly")->setValueNotifyingHost(args.contains("--noise-only")||args.contains("--procedural")?1:0);
                     processor.params.getParameter("procedural")->setValueNotifyingHost(args.contains("--procedural")?1:0);
                     NoiseBaseEditor editor(processor);
+                    if(!option("--update-progress").isEmpty()){
+                        double progress=option("--update-progress").getDoubleValue();auto phase=option("--update-phase").isEmpty()?juce::String("DOWNLOADING"):option("--update-phase");
+                        editor.setUpdateBusy(true,true);editor.onUpdateProgress=[progress,phase]{return std::pair<double,juce::String>{progress,phase};};
+                    }
                     // Parameter attachments are updated before the snapshot is painted.
                     juce::MessageManager::getInstance()->runDispatchLoopUntil(60);
                     auto image=editor.createComponentSnapshot(editor.getLocalBounds(),true,1.0f);
@@ -422,7 +447,7 @@ public:
         }
         theme=std::make_unique<OsTheme>();window=std::make_unique<AppWindow>();
     }
-    void shutdown() override {window.reset();theme.reset();}
+    void shutdown() override {window.reset();theme.reset();auto deadline=juce::Time::getMillisecondCounterHiRes()+2000;while(pendingNoiseBaseCleanups()>0&&juce::Time::getMillisecondCounterHiRes()<deadline)juce::Thread::sleep(2);}
     void systemRequestedQuit() override {quit();}
 private:std::unique_ptr<OsTheme> theme;std::unique_ptr<AppWindow> window;
 };

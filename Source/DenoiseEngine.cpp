@@ -1,4 +1,5 @@
 #include "DenoiseEngine.h"
+#include "NoiseTracking.h"
 
 void DenoiseEngine::prepare(double sr, int channels) {
     rate = sr; channelCount = juce::jlimit(1, 2, channels);
@@ -15,6 +16,7 @@ void DenoiseEngine::prepare(double sr, int channels) {
     smoothedPower.assign((size_t)bins, 0); power.assign((size_t)bins, 0);
     gain.assign((size_t)bins, 1); priorClean.assign((size_t)bins, 0);
     priorGain.assign((size_t)bins, 1); frequencyScratch.assign((size_t)bins, 0);
+    candidate.assign((size_t)bins,0);candidateSeconds=speechHangover=0;changes=0;
     inputPos=outputPos=0; untilFrame=hop; learnedSeconds=0; minimumAge=0; profileReady=false;
     mixSmooth.reset(rate,.035); mixSmooth.setCurrentAndTargetValue(1);
     outputSmooth.reset(rate,.035); outputSmooth.setCurrentAndTargetValue(1);
@@ -28,9 +30,10 @@ void DenoiseEngine::resetNoise() {
     std::fill(minimum.begin(),minimum.end(),1e30f);
     std::fill(priorClean.begin(),priorClean.end(),0);
     learnedSeconds=0; profileReady=false; minimumAge=0;
+    candidateSeconds=speechHangover=0;changes=0;
 }
 
-bool DenoiseEngine::setProfile(const NoiseProfile& profile) {
+bool DenoiseEngine::setProfile(const NoiseProfile& profile,bool clearHistory) {
     if(profile.fftSize<1 || profile.sampleRate<1 || profile.power.empty()) return false;
     double scale=(rate*size)/(profile.sampleRate*profile.fftSize);
     for(size_t k=0;k<noise.size();++k) {
@@ -40,7 +43,9 @@ bool DenoiseEngine::setProfile(const NoiseProfile& profile) {
         float fraction=(float)juce::jlimit(0.0,1.0,index-a);
         noise[k]=std::max(1e-16f,(profile.power[(size_t)a]+fraction*(profile.power[(size_t)b]-profile.power[(size_t)a]))*(float)scale);
     }
-    learnedSeconds=profile.quietSeconds; profileReady=!profile.estimated; return true;
+    learnedSeconds=profile.quietSeconds; profileReady=!profile.estimated;candidateSeconds=0;
+    if(clearHistory){std::fill(priorClean.begin(),priorClean.end(),0);std::fill(priorGain.begin(),priorGain.end(),1);}
+    return true;
 }
 
 void DenoiseEngine::frame(float speech, float cap, float preserve, bool learn) {
@@ -48,24 +53,34 @@ void DenoiseEngine::frame(float speech, float cap, float preserve, bool learn) {
     for(int c=0;c<channelCount;++c) {
         auto& data=fftData[(size_t)c];
         std::fill(data.begin(),data.end(),0);
-        for(int i=0;i<size;++i) data[(size_t)i]=input[(size_t)c][(size_t)((inputPos+i)%size)]*window[(size_t)i];
+        for(int i=0;i<size;++i) data[(size_t)i]=input[(size_t)c][(size_t)((inputPos+i)&(size-1))]*window[(size_t)i];
         fft->performRealOnlyForwardTransform(data.data(),true);
         for(int k=0;k<=size/2;++k) {
             float p=data[(size_t)k*2]*data[(size_t)k*2]+data[(size_t)k*2+1]*data[(size_t)k*2+1];
             power[(size_t)k]=juce::jmax(power[(size_t)k],p);
         }
     }
-    double arithmetic=0, logarithmic=0;
+    double arithmetic=0;
     int first=juce::jmax(1,(int)(120*size/rate)), last=juce::jmin(size/2,(int)(4500*size/rate));
-    for(int k=first;k<=last;++k) { arithmetic+=power[(size_t)k]; logarithmic+=std::log((double)power[(size_t)k]+1e-20); }
+    for(int k=first;k<=last;++k) arithmetic+=power[(size_t)k];
     // The neural detector handles tonal room noise; rejecting it by spectral
     // flatness would prevent many real lavalier recordings from ever learning.
-    bool quiet=speech<.20f && arithmetic>1e-12;
+    if(speech>.35f)speechHangover=.1;else speechHangover=std::max(0.0,speechHangover-hop/rate);
+    bool quiet=speech<.20f && speechHangover<=0 && arithmetic>1e-12;
+    bool changed=learn&&quiet&&profileReady&&differentNoise(noiseBands(power,rate,size),noiseBands(noise,rate,size));
+    if(changed){
+        auto currentBands=noiseBands(power,rate,size);
+        if(candidateSeconds>.05&&differentNoise(currentBands,noiseBands(candidate,rate,size)))candidateSeconds=0;
+        float alpha=candidateSeconds==0?1.0f:(float)(1-std::exp(-hop/(rate*.12)));
+        for(size_t k=0;k<candidate.size();++k)candidate[k]+=alpha*(power[k]-candidate[k]);
+        candidateSeconds+=hop/rate;
+        if(candidateSeconds>=.30){std::copy(candidate.begin(),candidate.end(),noise.begin());std::fill(priorClean.begin(),priorClean.end(),0);candidateSeconds=0;++changes;}
+    }else candidateSeconds=0;
     float learningRate=(float)(hop/(rate*1.5));
     for(size_t k=0;k<noise.size();++k) {
         smoothedPower[k]=.80f*smoothedPower[k]+.20f*power[k];
         minimum[k]=std::min(minimum[k],smoothedPower[k]);
-        if(learn && quiet) {
+        if(learn && quiet && !changed) {
             float alpha=learnedSeconds<.15 ? .35f : learningRate;
             noise[k]=(1-alpha)*noise[k]+alpha*power[k];
         }
@@ -96,7 +111,7 @@ void DenoiseEngine::frame(float speech, float cap, float preserve, bool learn) {
         auto& data=fftData[(size_t)c];
         for(int k=0;k<=size/2;++k) { data[(size_t)k*2]*=gain[(size_t)k]; data[(size_t)k*2+1]*=gain[(size_t)k]; }
         fft->performRealOnlyInverseTransform(data.data());
-        for(int i=0;i<size;++i) output[(size_t)c][(size_t)((outputPos+1+i)%outputCapacity)]+=data[(size_t)i]*window[(size_t)i]*(2.0f/3.0f);
+        for(int i=0;i<size;++i) output[(size_t)c][(size_t)((outputPos+1+i)&(outputCapacity-1))]+=data[(size_t)i]*window[(size_t)i]*(2.0f/3.0f);
     }
 }
 
@@ -124,9 +139,9 @@ void DenoiseEngine::process(juce::AudioBuffer<float>& buffer,float speech,float 
             float result=(clean+(noise-clean)*listen)*level;
             buffer.setSample(c,s,result); peakOut=std::max(peakOut,std::abs(result));
         }
-        inputPos=(inputPos+1)%size;
+        inputPos=(inputPos+1)&(size-1);
         if(--untilFrame==0) { frame(speech,cap,preserve,learn); untilFrame=hop; }
-        outputPos=(outputPos+1)%outputCapacity;
+        outputPos=(outputPos+1)&(outputCapacity-1);
     }
     float decay=(float)std::exp(-buffer.getNumSamples()/(rate*.25));
     meterInput=std::max(peakIn,meterInput*decay); meterOutput=std::max(peakOut,meterOutput*decay);

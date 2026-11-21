@@ -27,6 +27,9 @@ public:
     void getStateInformation(juce::MemoryBlock&) override;
     void setStateInformation(const void*,int) override;
     void resetProfile() {resetRequested.store(true);}
+    void learnTrack();
+    void serviceJobs(); // message-thread handoff; never called by processBlock
+    void delaySpeechStartupForTest(int milliseconds){voice.delayStartupForTest(milliseconds);}
     void loadRecording(const juce::File&);
     void scanRecording();
     void saveRecording(const juce::File&,double ambienceSeconds=60);
@@ -45,6 +48,7 @@ public:
     std::atomic<bool> standaloneMode{false},fileMode{false},busy{false},analysed{false},detectorAvailable{false};
     std::atomic<bool> detectorFailed{false};
     std::atomic<bool> ambienceReady{false};
+    std::atomic<int> noiseRegionCount{0},activeNoiseRegion{0};
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout layout();
     float value(const char* id) const {return params.getRawParameterValue(id)->load();}
@@ -59,19 +63,25 @@ private:
     std::atomic<bool> ambiencePlaying{false};
     std::atomic<int64_t> ambienceSamples{0};
     double playbackRate=48000;
-    bool wasProcedural=false;
+    bool wasProcedural=false,voiceActive=false;
     VoiceWorker voice;
     juce::AudioFormatManager formats;
     juce::AudioTransportSource transport;
     juce::TimeSliceThread readAhead{"NoiseBase file playback"};
     std::unique_ptr<TapeReaderSource> readerSource;
     std::atomic<bool> loopPlayback{false};
-    juce::ThreadPool jobs{1};
+    struct FileJobState;
+    std::unique_ptr<juce::ThreadPool> jobs;
+    std::shared_ptr<FileJobState> activeJob;
     mutable juce::CriticalSection statusLock,analysisLock;
     juce::String status="AUTO listens for quieter sections",fileName="NO TAPE LOADED";
     juce::File loadedFile;
     std::unique_ptr<FileAnalysis> analysis;
+    juce::SpinLock regionLock;
+    std::shared_ptr<const NoiseRegions> noiseRegions;
+    std::shared_ptr<const std::vector<float>> fileVoice;
+    int selectedRegion=-1;
     juce::SpinLock pendingLock;
     NoiseProfile pendingProfile;
-    std::atomic<bool> pending{false},resetRequested{false},cancel{false};
+    std::atomic<bool> pending{false},resetRequested{false};
 };

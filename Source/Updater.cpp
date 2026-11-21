@@ -1,4 +1,5 @@
 #include "Updater.h"
+#include <cmath>
 #if JUCE_WINDOWS
 #include <windows.h>
 #include <shellapi.h>
@@ -15,12 +16,13 @@ NoiseBaseUpdater::NoiseBaseUpdater():Thread("NoiseBase release checker"){}
 NoiseBaseUpdater::~NoiseBaseUpdater(){signalThreadShouldExit();stopThread(3000);}
 bool NoiseBaseUpdater::request(bool prepare,std::function<void(juce::var)> completion) {
     if(isThreadRunning())return false;
-    preparing=prepare;callback=std::move(completion);startThread();return true;
+    preparing=prepare;progress.store(-1);phase.store(0);callback=std::move(completion);startThread();return true;
 }
 void NoiseBaseUpdater::run() {
     juce::var result;
     auto helper=applicationDirectory().getChildFile("NoiseBase-Update.ps1");
     auto report=juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("NoiseBase-update-"+juce::Uuid{}.toString(),".json",false);
+    auto progressFile=juce::File(report.getFullPathName()+".progress.json");
     if(!helper.existsAsFile())result=failure("The update helper is missing. Reinstall the complete NoiseBase package.");
     else {
         juce::StringArray arguments{powershell().getFullPathName(),"-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-File",helper.getFullPathName(),"-Mode",preparing?"Prepare":"Check","-CurrentVersion",NOISEBASE_VERSION,"-Report",report.getFullPathName()};
@@ -28,13 +30,17 @@ void NoiseBaseUpdater::run() {
         if(!child.start(arguments,0))result=failure("Could not start the update helper.");
         else {
             auto deadline=juce::Time::getMillisecondCounterHiRes()+(preparing?360000.0:35000.0);
-            while(child.isRunning()&&!threadShouldExit()&&juce::Time::getMillisecondCounterHiRes()<deadline)wait(100);
+            while(child.isRunning()&&!threadShouldExit()&&juce::Time::getMillisecondCounterHiRes()<deadline){
+                if(progressFile.existsAsFile()&&progressFile.getSize()<=4096){auto update=juce::JSON::parse(progressFile);if(update.isObject()){double value=(double)update["fraction"];if(std::isfinite(value)&&value>=-1&&value<=1){progress.store(value);phase.store(juce::jlimit(0,5,(int)update["phase"]));}}}
+                wait(100);
+            }
             if(child.isRunning()){child.kill();result=failure("The update check was cancelled or timed out.");}
             else if(report.existsAsFile())result=juce::JSON::parse(report);
             else result=failure("The update service did not return a report. Try again when connected to the internet.");
         }
     }
-    report.deleteFile();
+    report.deleteFile();progressFile.deleteFile();juce::File(progressFile.getFullPathName()+".tmp").deleteFile();
+    juce::File(progressFile.getFullPathName()+".previous").deleteFile();
     if(!result.isObject())result=failure("The update response could not be read.");
     if(!threadShouldExit())juce::MessageManager::callAsync([completion=callback,result]{if(completion)completion(result);});
 }

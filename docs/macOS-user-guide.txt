@@ -21,7 +21,12 @@ https://support.apple.com/en-us/102445
 No system-wide Gatekeeper changes or quarantine-removal commands are required.
 
 USE
-LOAD CLIP automatically scans a recording for quiet background. CLEAN previews
+LOAD CLIP automatically scans the whole recording and maps different quiet
+backgrounds across stitched clips. AUTO follows those local floors in standalone
+preview and file export. LEARN re-analyzes the entire loaded file; HOLD freezes
+the active floor. Without a file, the VST3 learns incoming DAW audio automatically
+and LEARN restarts that analysis. It cannot read unplayed host audio.
+CLEAN previews
 or exports denoised dialogue. NOISE BASE + REMOVED monitors the removed-noise
 estimate, which can include dialogue bleed. NOISE BASE + PROCEDURAL generates
 fresh ambience indefinitely from quiet-section statistics. Press play in the

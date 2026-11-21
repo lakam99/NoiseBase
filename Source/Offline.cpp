@@ -13,11 +13,12 @@ void checkCancel(std::atomic<bool>* cancel) { if(cancel && cancel->load()) throw
 }
 
 FileAnalysis analyseRecording(const juce::File& file,std::atomic<float>* progress,std::atomic<bool>* cancel) {
+    checkCancel(cancel);
     auto reader=openReader(file);
     FileAnalysis result; result.source=file; result.frames=reader->lengthInSamples;
     result.sampleRate=reader->sampleRate; result.channels=(int)reader->numChannels;
     result.bits=(int)reader->bitsPerSample; result.floating=reader->usesFloatingPointData;
-    VoiceDetector voice;
+    checkCancel(cancel);VoiceDetector voice;
     juce::AudioBuffer<float> block(result.channels,8192);
     juce::dsp::IIR::Filter<float> lowpass;
     lowpass.coefficients=juce::dsp::IIR::Coefficients<float>::makeLowPass(result.sampleRate,std::min(6500.0,result.sampleRate*.4));
@@ -51,6 +52,7 @@ FileAnalysis analyseRecording(const juce::File& file,std::atomic<float>* progres
     }
     int order=juce::jlimit(8,13,(int)std::round(std::log2(result.sampleRate*.046)));
     int size=1<<order, hop=size/4, bins=size/2+1;
+    NoiseTimelineBuilder timeline(result.sampleRate,size,hop);
     juce::dsp::FFT fft(order);
     std::vector<float> window((size_t)size),data((size_t)size*2),power((size_t)bins),smooth((size_t)bins,0),minimum((size_t)bins,1e30f);
     std::vector<double> sum((size_t)bins,0);
@@ -83,6 +85,10 @@ FileAnalysis analyseRecording(const juce::File& file,std::atomic<float>* progres
         bool ok=pos>.10*result.sampleRate && pos+size<result.frames-.10*result.sampleRate;
         int a=(int)(pos/result.sampleRate/.032), b=(int)((pos+size)/result.sampleRate/.032)+1;
         for(int i=a;i<b && i<(int)quiet.size();++i) if(!quiet[(size_t)i]) ok=false;
+        // The local timeline sees the whole track, including backgrounds that
+        // are louder than the first scene. Keep the procedural reference's
+        // existing transient rejection separate from dialogue processing.
+        timeline.add(pos,power,ok);
         if(used>5 && energy>quietEnergy/used*4) ok=false;
         if(ok) { ++used; quietEnergy+=energy;double db=10*std::log10(std::max(energy,1e-20));levelSum+=db;levelSquared+=db*db;
             for(int k=0;k<bins;++k){sum[(size_t)k]+=power[(size_t)k];for(int c=0;c<2;++c)channelSum[(size_t)c][(size_t)k]+=channelPower[(size_t)std::min(c,result.channels-1)][(size_t)k];
@@ -105,11 +111,12 @@ FileAnalysis analyseRecording(const juce::File& file,std::atomic<float>* progres
     result.profile.ambienceCorrelation.resize((size_t)bins);
     for(int c=0;c<2;++c){result.profile.ambiencePower[(size_t)c].resize((size_t)bins);for(int k=0;k<bins;++k)result.profile.ambiencePower[(size_t)c][(size_t)k]=(float)(channelSum[(size_t)c][(size_t)k]/std::max(used,1));}
     for(int k=0;k<bins;++k)result.profile.ambienceCorrelation[(size_t)k]=(float)juce::jlimit(-1.0,1.0,crossSum[(size_t)k]/std::max(1e-30,std::sqrt(channelSum[0][(size_t)k]*channelSum[1][(size_t)k])));
+    result.regions=std::make_shared<const NoiseRegions>(timeline.finish(result.frames,result.profile));
     if(progress) progress->store(1);
     return result;
 }
 
-void exportRecording(const FileAnalysis& analysis,const juce::File& destination,float reduction,float preserve,float mix,float outputDb,std::atomic<float>* progress,std::atomic<bool>* cancel,bool noiseOnly) {
+void exportRecording(const FileAnalysis& analysis,const juce::File& destination,float reduction,float preserve,float mix,float outputDb,std::atomic<float>* progress,std::atomic<bool>* cancel,bool noiseOnly,bool followTrack) {
     if(destination==analysis.source) throw std::runtime_error("Choose a new file; the source cannot be overwritten.");
     auto reader=openReader(analysis.source);
     juce::TemporaryFile temp(destination);
@@ -122,7 +129,9 @@ void exportRecording(const FileAnalysis& analysis,const juce::File& destination,
     for(int i=0;i<reader->metadataValues.size();++i)options=options.withMetadata(reader->metadataValues.getAllKeys()[i],reader->metadataValues.getAllValues()[i]);
     auto writer=wav.createWriterFor(stream,options);
     if(!writer) throw std::runtime_error("Cannot create a WAV writer.");
-    DenoiseEngine engine; engine.prepare(analysis.sampleRate,analysis.channels); engine.setProfile(analysis.profile);
+    DenoiseEngine engine; engine.prepare(analysis.sampleRate,analysis.channels);
+    const auto* regions=followTrack&&analysis.regions&&!analysis.regions->empty()?analysis.regions.get():nullptr;
+    int region=0;engine.setProfile(regions?regions->front().profile:analysis.profile);
     int latency=engine.latency();
     juce::AudioBuffer<float> block(analysis.channels,512);
     // Prime parameter ramps with silence before the file starts.
@@ -131,6 +140,8 @@ void exportRecording(const FileAnalysis& analysis,const juce::File& destination,
     while(rendered<analysis.frames+latency) {
         checkCancel(cancel);
         int count=(int)std::min<int64_t>(512,analysis.frames+latency-rendered);
+        if(regions){int next=noiseRegionAt(*regions,std::max<int64_t>(0,rendered-engine.fftSize()/2));if(next!=region){region=next;engine.setProfile((*regions)[(size_t)region].profile,true);}
+            if(region+1<(int)regions->size())count=(int)std::min<int64_t>(count,(*regions)[(size_t)(region+1)].start+engine.fftSize()/2-rendered);}
         block.setSize(analysis.channels,count,false,false,true); block.clear();
         if(rendered<analysis.frames) reader->read(&block,0,(int)std::min<int64_t>(count,analysis.frames-rendered),rendered,true,true);
         int idx=juce::jlimit(0,(int)analysis.voice.size()-1,(int)(rendered/analysis.sampleRate/.032));
@@ -186,6 +197,8 @@ juce::var runEngineTests() {
     }
     auto noiseTests=runNoiseOutputTests();passed &= (bool)noiseTests["passed"];
     auto proceduralTests=runProceduralTests();passed &= (bool)proceduralTests["passed"];
+    auto trackTests=runTrackTests();passed &= (bool)trackTests["passed"];report->setProperty("whole_track",trackTests);
+    auto hostTests=runHostSafetyTests();passed &= (bool)hostTests["passed"];report->setProperty("host_safety",hostTests);
     report->setProperty("procedural",proceduralTests);
     report->setProperty("passed",passed); report->setProperty("unity_latency_tests",results);report->setProperty("noise_only",noiseTests); return juce::var(report);
 }

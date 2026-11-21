@@ -75,3 +75,4 @@ Assert-True (-not (Test-Path -LiteralPath $updated.previousApp)) 'Uninstall left
 Assert-True (Test-Path -LiteralPath (Join-Path $unknown 'sentinel.txt')) 'Uninstall touched unrelated data.'
 @{passed=$true;checks=$checks} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $TestRoot 'updates-tests.json') -Encoding UTF8
 Write-Output ("Installer and updater policy checks passed: $checks")
+& (Join-Path $PSScriptRoot 'Test-UpdateProgress.ps1') -TestRoot (Join-Path $TestRoot 'progress')
