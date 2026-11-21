@@ -17,6 +17,7 @@ void DenoiseEngine::prepare(double sr, int channels) {
     gain.assign((size_t)bins, 1); priorClean.assign((size_t)bins, 0);
     priorGain.assign((size_t)bins, 1); frequencyScratch.assign((size_t)bins, 0);
     candidate.assign((size_t)bins,0);candidateSeconds=speechHangover=0;changes=0;
+    rustle.prepare(rate,size,hop);
     inputPos=outputPos=0; untilFrame=hop; learnedSeconds=0; minimumAge=0; profileReady=false;
     mixSmooth.reset(rate,.035); mixSmooth.setCurrentAndTargetValue(1);
     outputSmooth.reset(rate,.035); outputSmooth.setCurrentAndTargetValue(1);
@@ -31,6 +32,7 @@ void DenoiseEngine::resetNoise() {
     std::fill(priorClean.begin(),priorClean.end(),0);
     learnedSeconds=0; profileReady=false; minimumAge=0;
     candidateSeconds=speechHangover=0;changes=0;
+    rustle.reset();
 }
 
 bool DenoiseEngine::setProfile(const NoiseProfile& profile,bool clearHistory) {
@@ -44,7 +46,7 @@ bool DenoiseEngine::setProfile(const NoiseProfile& profile,bool clearHistory) {
         noise[k]=std::max(1e-16f,(profile.power[(size_t)a]+fraction*(profile.power[(size_t)b]-profile.power[(size_t)a]))*(float)scale);
     }
     learnedSeconds=profile.quietSeconds; profileReady=!profile.estimated;candidateSeconds=0;
-    if(clearHistory){std::fill(priorClean.begin(),priorClean.end(),0);std::fill(priorGain.begin(),priorGain.end(),1);}
+    if(clearHistory){std::fill(priorClean.begin(),priorClean.end(),0);std::fill(priorGain.begin(),priorGain.end(),1);rustle.reset();}
     return true;
 }
 bool DenoiseEngine::copyLearnedProfile(NoiseProfile& p) const {
@@ -63,13 +65,14 @@ void DenoiseEngine::frame(float speech, float cap, float preserve, bool learn) {
             power[(size_t)k]=juce::jmax(power[(size_t)k],p);
         }
     }
+    rustle.analyse(power);
     double arithmetic=0;
     int first=juce::jmax(1,(int)(120*size/rate)), last=juce::jmin(size/2,(int)(4500*size/rate));
     for(int k=first;k<=last;++k) arithmetic+=power[(size_t)k];
     // The neural detector handles tonal room noise; rejecting it by spectral
     // flatness would prevent many real lavalier recordings from ever learning.
     if(speech>.35f)speechHangover=.1;else speechHangover=std::max(0.0,speechHangover-hop/rate);
-    bool quiet=speech<.20f && speechHangover<=0 && arithmetic>1e-12;
+    bool quiet=speech<.20f && speechHangover<=0 && arithmetic>1e-12 && !rustle.excludesLearning();
     bool changed=learn&&quiet&&profileReady&&differentNoise(noiseBands(power,rate,size),noiseBands(noise,rate,size));
     if(changed){
         auto currentBands=noiseBands(power,rate,size);
@@ -101,7 +104,7 @@ void DenoiseEngine::frame(float speech, float cap, float preserve, bool learn) {
         float prior=juce::jmax(.90f*priorClean[k]+.10f*immediate,.65f*immediate);
         float g=juce::jlimit(floor,1.0f,prior/(1+prior));
         priorClean[k]=posterior*g*g;
-        frequencyScratch[k]=g;
+        frequencyScratch[k]=std::max(floor,g*(rustleEnabled?rustle.gainForBin((int)k,cap,speech,preserve):1.0f));
     }
     double averageGain=0;
     for(size_t k=0;k<gain.size();++k) {

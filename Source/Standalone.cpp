@@ -415,11 +415,12 @@ public:
                     juce::File output(args[i+2]);
                     if(output.existsAsFile())throw std::runtime_error("Output exists; choose a new copy.");
                     double seconds=option("--seconds").isEmpty()?60:option("--seconds").getDoubleValue();
-                    if(args.contains("--procedural"))exportAmbience(analysis.profile,output,seconds,1,0);else exportRecording(analysis,output,14,.8f,1,0,nullptr,nullptr,args.contains("--noise-only"));
+                    uint64_t rustleFrames=0;if(args.contains("--procedural"))exportAmbience(analysis.profile,output,seconds,1,0);else exportRecording(analysis,output,14,.8f,1,0,nullptr,nullptr,args.contains("--noise-only"),true,&rustleFrames);
                     auto* result=new juce::DynamicObject;result->setProperty("passed",true);result->setProperty("samples",args.contains("--procedural")?(double)std::llround(seconds*analysis.sampleRate):(double)analysis.frames);
                     result->setProperty("sample_rate",analysis.sampleRate);result->setProperty("channels",analysis.channels);
                     result->setProperty("noise_reference_seconds",analysis.profile.quietSeconds);result->setProperty("estimated",analysis.profile.estimated);
                     result->setProperty("noise_only",args.contains("--noise-only"));
+                    result->setProperty("rustle_active_frames",(juce::int64)rustleFrames);
                     result->setProperty("procedural",args.contains("--procedural"));result->setProperty("seamless_loop",args.contains("--procedural"));
                     result->setProperty("output",output.getFullPathName());report=juce::var(result);
                 } else if(args.contains("--render-ui")) {

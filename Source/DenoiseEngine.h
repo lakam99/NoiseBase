@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_dsp/juce_dsp.h>
 #include <atomic>
+#include "RustleSuppressor.h"
 
 struct NoiseProfile {
     double sampleRate = 0;
@@ -31,6 +32,8 @@ public:
     float inputMeter() const { return meterInput; }
     float outputMeter() const { return meterOutput; }
     int automaticChanges() const {return changes;}
+    uint64_t rustleFrames() const {return rustle.activeFrames();}
+    void disableRustleForTest() {rustleEnabled=false;} // native comparison only; no host parameter
 private:
     void frame(float speech, float cap, float preserve, bool autoLearn);
     double rate = 48000, learnedSeconds = 0,candidateSeconds=0,speechHangover=0;
@@ -44,4 +47,6 @@ private:
     bool profileReady = false;
     float meterInput = 0, meterOutput = 0, meterReduction = 0;
     juce::SmoothedValue<float> mixSmooth, outputSmooth, bypassSmooth, noiseOnlySmooth;
+    RustleSuppressor rustle;
+    bool rustleEnabled=true;
 };

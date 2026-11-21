@@ -61,6 +61,20 @@ The VFD shows the cached-region count. Moving/replacing clips can need new
 learning at their new timeline positions. Cached sidechain profiles still obey
 playback/input gating and the BRIDGE delay when enabled.
 
+AUTOMATIC RUSTLE REDUCTION
+Short, broadband high-frequency friction bursts are reduced automatically in
+CLEAN, live VST3 playback, standalone preview and file export. The detector
+protects narrow voice harmonics and isolated speech onsets; irregular repeated
+strokes permit stronger attenuation. Confident bursts are excluded from live
+and whole-file floor learning, while sustained new backgrounds still adapt.
+
+No extra switch, knob, training step or lookahead delay is required. Existing
+REDUCTION and VOICE DETAIL affect the reduction limit and speech protection.
+It works with HOLD too; zero REDUCTION, dry blend and bypass retain their normal
+behavior. Saved session profiles remain compatible. Rustle can resemble
+consonants: ambiguous strokes are treated lightly, and noise overlapping words
+can remain. Audition the dialogue and the removed-noise output.
+
 VST3 SIDECHAIN REFERENCE
 Put NoiseBase on an ambience track/bus that your DAW keeps processing. Enable
 its Reference sidechain in the DAW and send another track to that input. Select

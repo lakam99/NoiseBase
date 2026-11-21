@@ -1,0 +1,9 @@
+NoiseBase 1.10.0 automatically reduces short high-frequency friction bursts, such as hair or clothing brushing a lavalier, alongside its existing steady-background denoising.
+
+- A separate transient estimate follows broadband spectral shape, high-frequency excess and irregular repeated strokes. It protects narrow voice harmonics and limits attenuation of isolated speech onsets. REDUCTION and VOICE DETAIL retain control of the existing reduction limit and speech protection; no host parameter or UI control was added.
+- Confidently detected bursts are excluded from live and whole-file noise-floor learning. A sustained new background returns to normal learning. Rustle reduction also works with HOLD and during file preview/export, and contributes to REMOVED monitoring.
+- The detector runs inside the existing FFT processing with preallocated storage. It adds no lookahead, audio delay, model loading, disk access or worker thread. Bypass, zero reduction, dry blend, stereo phase, reported latency and saved profile schemas remain compatible.
+
+Native checks exercise paired friction bursts mixed with a voice-band tone at 44.1, 48 and 96 kHz, plus clean spoken audio, an isolated wideband sibilant, and a sustained 20 dB background change. They verify useful friction reduction, low voice-band change, conservative consonant handling and resumed steady-floor learning. Existing engine, cache cold-start, actual VST3 host, sidechain, gap bridge, file, UI and installer checks also run. Reports are included in the release packages. Personal evaluation recordings are not included in source or packages.
+
+Rustle and unvoiced speech can have similar spectra. This version uses conservative signal analysis rather than a trained universal clothing-noise separation model. Ambiguous strokes receive lighter attenuation, and some noise overlapping words can remain. Listening remains necessary; numerical checks do not certify every dialogue recording.

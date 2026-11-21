@@ -55,6 +55,7 @@ FileAnalysis analyseRecording(const juce::File& file,std::atomic<float>* progres
     int order=juce::jlimit(8,13,(int)std::round(std::log2(result.sampleRate*.046)));
     int size=1<<order, hop=size/4, bins=size/2+1;
     NoiseTimelineBuilder timeline(result.sampleRate,size,hop);
+    RustleSuppressor rustle;rustle.prepare(result.sampleRate,size,hop);
     juce::dsp::FFT fft(order);
     std::vector<float> window((size_t)size),data((size_t)size*2),power((size_t)bins),smooth((size_t)bins,0),minimum((size_t)bins,1e30f);
     std::vector<double> sum((size_t)bins,0);
@@ -78,6 +79,7 @@ FileAnalysis analyseRecording(const juce::File& file,std::atomic<float>* progres
             for(int k=0;k<bins;++k){float p=data[(size_t)k*2]*data[(size_t)k*2]+data[(size_t)k*2+1]*data[(size_t)k*2+1];channelPower[(size_t)c][(size_t)k]=p;power[(size_t)k]=std::max(power[(size_t)k],p);}
         }
         ++seen;
+        rustle.analyse(power);
         double energy=0;
         for(int k=0;k<bins;++k) {
             smooth[(size_t)k]=.9f*smooth[(size_t)k]+.1f*power[(size_t)k];
@@ -87,6 +89,7 @@ FileAnalysis analyseRecording(const juce::File& file,std::atomic<float>* progres
         bool ok=pos>.10*result.sampleRate && pos+size<result.frames-.10*result.sampleRate;
         int a=(int)(pos/result.sampleRate/.032), b=(int)((pos+size)/result.sampleRate/.032)+1;
         for(int i=a;i<b && i<(int)quiet.size();++i) if(!quiet[(size_t)i]) ok=false;
+        if(rustle.excludesLearning())ok=false;
         // The local timeline sees the whole track, including backgrounds that
         // are louder than the first scene. Keep the procedural reference's
         // existing transient rejection separate from dialogue processing.
@@ -118,7 +121,7 @@ FileAnalysis analyseRecording(const juce::File& file,std::atomic<float>* progres
     return result;
 }
 
-void exportRecording(const FileAnalysis& analysis,const juce::File& destination,float reduction,float preserve,float mix,float outputDb,std::atomic<float>* progress,std::atomic<bool>* cancel,bool noiseOnly,bool followTrack) {
+void exportRecording(const FileAnalysis& analysis,const juce::File& destination,float reduction,float preserve,float mix,float outputDb,std::atomic<float>* progress,std::atomic<bool>* cancel,bool noiseOnly,bool followTrack,uint64_t* rustleFrames) {
     if(destination==analysis.source) throw std::runtime_error("Choose a new file; the source cannot be overwritten.");
     auto reader=openReader(analysis.source);
     juce::TemporaryFile temp(destination);
@@ -160,6 +163,7 @@ void exportRecording(const FileAnalysis& analysis,const juce::File& destination,
     writer.reset();
     if(written!=analysis.frames) throw std::runtime_error("Timing verification failed; output was not committed.");
     if(!temp.overwriteTargetFileWithTemporary()) throw std::runtime_error("Cannot move the rendered file into place.");
+    if(rustleFrames)*rustleFrames=engine.rustleFrames();
     if(progress) progress->store(1);
 }
 
@@ -198,6 +202,7 @@ juce::var runEngineTests() {
         row->setProperty("passed",ok); passed &= ok; results.add(juce::var(row));
     }
     auto noiseTests=runNoiseOutputTests();passed &= (bool)noiseTests["passed"];
+    auto rustleTests=runRustleTests();passed &= (bool)rustleTests["passed"];report->setProperty("automatic_rustle",rustleTests);
     auto proceduralTests=runProceduralTests();passed &= (bool)proceduralTests["passed"];
     auto trackTests=runTrackTests();passed &= (bool)trackTests["passed"];report->setProperty("whole_track",trackTests);
     auto hostTests=runHostSafetyTests();passed &= (bool)hostTests["passed"];report->setProperty("host_safety",hostTests);
