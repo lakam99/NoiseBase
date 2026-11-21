@@ -46,6 +46,23 @@ UPDATES checks GitHub Releases; installing Mac updates is manual through the
 release download page. No audio is uploaded. Audio processing needs no account,
 network connection or API key. Windows' PowerShell installer is not used on Mac.
 
+VST3 SIDECHAIN REFERENCE
+Put NoiseBase on an ambience track/bus that your DAW keeps processing. Enable
+its Reference sidechain in the DAW and send another track to that input. Select
+REFERENCE: SIDECHAIN, NOISE BASE, PROCEDURAL and AUTO. Play a passage containing
+quiet background. The VFD reports learning/readiness; MIX and OUTPUT set level.
+AUTO follows background changes, HOLD freezes the texture, and LEARN resets it.
+The reference is analyzed on a worker; it is never mixed directly into output.
+The main input remains the source for CLEAN/REMOVED and bypass.
+
+Generation continues from the last profile when the reference stops/goes silent,
+and the active model is saved with DAW state. Procedural mode reports an infinite
+tail; host suspension can still stop processing. PRINT WAV can export the active
+sidechain model as a 60-second seamless loop. CLIP selects the loaded-file source;
+LOAD CLIP switches to it automatically. The standalone uses loaded clips.
+Learning is causal, speech detection can misclassify audio, and synthesis creates
+a statistical texture rather than reproducing individual events. Audition it.
+
 VERIFICATION
 The release runs native arm64 engine, VST3 host, saved-profile, file workflow,
 procedural export, UI/icon and bundle-signature tests on a macOS build runner.

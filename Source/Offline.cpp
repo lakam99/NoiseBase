@@ -1,4 +1,5 @@
 #include "Offline.h"
+#include "ReferenceLearner.h"
 
 namespace {
 std::unique_ptr<juce::AudioFormatReader> openReader(const juce::File& file) {
@@ -199,6 +200,7 @@ juce::var runEngineTests() {
     auto proceduralTests=runProceduralTests();passed &= (bool)proceduralTests["passed"];
     auto trackTests=runTrackTests();passed &= (bool)trackTests["passed"];report->setProperty("whole_track",trackTests);
     auto hostTests=runHostSafetyTests();passed &= (bool)hostTests["passed"];report->setProperty("host_safety",hostTests);
+    auto referenceTests=runReferenceTests();passed &= (bool)referenceTests["passed"];report->setProperty("external_reference",referenceTests);
     report->setProperty("procedural",proceduralTests);
     report->setProperty("passed",passed); report->setProperty("unity_latency_tests",results);report->setProperty("noise_only",noiseTests); return juce::var(report);
 }

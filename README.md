@@ -15,6 +15,7 @@ The standalone application scans the entire recording and follows different back
 - Automatic whole-file noise profiling, with local profiles for changing backgrounds and speech-aware live adaptation.
 - Reduction, voice detail, dry/clean blend, output trim, and latency-aligned bypass.
 - Continuous procedural ambience from one reference clip, saved with the session.
+- Optional VST3 sidechain reference: learn another track's background and generate matching continuous ambience on this track.
 - Removed-noise monitoring, plus procedural seamless-loop and noise-base WAV export.
 - Mono and stereo processing with a shared stereo mask.
 - Standalone file loading, automatic scanning, playback, and WAV export.
@@ -48,6 +49,14 @@ Choose **LOAD CLIP** in either format, or drop one reference recording onto the 
 The compact statistical model is saved in DAW state and standalone preferences. It stores no recorded waveform and does not need the source file after restoration. It requires at least 0.35 seconds of confidently detected quiet background; uncertain floor estimates are refused for synthesis. Detection can misclassify material, so audition the result. It generates a statistical ambience bed rather than reconstructing separate birds, vehicles, impacts or other recognizable events.
 
 **PRINT WAV** defaults to a **60-second seamless loop**, with an editable 1–3600 second duration. Its sample rate and mono/stereo layout follow the reference. MIX sets generated level, OUTPUT TRIM adjusts gain. Reduction and voice detail affect denoising, not procedural synthesis. Bypass restores the original, including dialogue. Older sessions retain their removed-noise route until you select PROCEDURAL explicitly.
+
+## Another track as a procedural reference (VST3)
+
+Insert NoiseBase on a dedicated ambience track or bus. Enable its **Reference** sidechain in your DAW and send the reference/dialogue track to that input. Select **REFERENCE → SIDECHAIN**, **NOISE BASE**, **PROCEDURAL**, and **AUTO**. Play a passage containing background between words: NoiseBase learns spectral shape, stereo balance/correlation and level variation, then generates fresh ambience on its main output. The reference signal is never mixed directly into that output. Use MIX and OUTPUT TRIM to set the bed level.
+
+AUTO follows stable background changes in the reference. **HOLD** freezes the active texture; **LEARN** clears it and restarts sidechain analysis. A stopped or digitally silent reference leaves the last profile generating. The compact active model and source switch are saved with DAW state, so a restored instance can generate without the reference. Procedural mode reports an infinite tail; the DAW must keep processing the plug-in (disable its suspension if needed). **CLIP** returns to a loaded-file profile; **LOAD CLIP** selects that source automatically. Clean and removed-noise processing still use the main input.
+
+The sidechain learns causally as audio arrives, rather than reading the other track's future timeline. Speech detection uses a short look-ahead on the analysis worker and can still misclassify material; audition the generated bed. Synthesis matches a statistical texture, not recognizable events or spoken words. **PRINT WAV** can export the current sidechain model as a 60-second seamless loop. Standalone uses loaded clips rather than DAW sidechain routing.
 
 ## Removed-noise monitoring
 
@@ -94,7 +103,7 @@ The build copies the required runtime DLLs alongside both formats. See [BUILDING
 
 ## Verification and limits
 
-Release verification covers engine timing/bypass/stereo checks at 44.1, 48, and 96 kHz, stitched-background scans, VST3 loading/state/editor creation and repeated removal, delayed speech-worker cleanup, and the standalone load/scan/preview/export workflow. An independent visual critic reviewed the native skins and VFD update progress. See the [1.6.0 release notes](docs/Release-1.6.0.md); native reports are included in release packages. The reported Studio Pro freeze has not been reproduced in that DAW, and physical audio devices have not been certified by these tests.
+Release verification covers engine timing/bypass/stereo checks at 44.1, 48, and 96 kHz, stitched-background scans, real VST3 sidechain routing and synthesis, saved-model restoration, delayed worker cleanup, and the standalone file workflow. An independent visual critic reviewed the native skins, VFD update progress and reference switch. See the [1.7.0 release notes](docs/Release-1.7.0.md); native reports are included in release packages. The reported Studio Pro freeze has not been reproduced in that DAW, and physical audio devices have not been certified by these tests.
 
 Reported latency is 2048 samples at 44.1/48 kHz and 4096 samples at 96 kHz; standalone file export compensates this delay. This processor targets dialogue with persistent background noise. Strong wind impacts, clipping, and overlapping voices may remain. Large reduction settings can soften speech, so audition the result.
 

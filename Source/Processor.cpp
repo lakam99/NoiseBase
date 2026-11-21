@@ -29,10 +29,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout NoiseBaseProcessor::layout()
     // Append to retain the existing parameter order and IDs in saved projects.
     result.add(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"noiseOnly",1},"Noise only",false));
     result.add(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"procedural",1},"Procedural noise",true));
+    result.add(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"externalReference",1},"External reference",false));
     return result;
 }
 NoiseBaseProcessor::NoiseBaseProcessor():AudioProcessor(BusesProperties().withInput("Input",juce::AudioChannelSet::stereo(),true)
-        .withOutput("Output",juce::AudioChannelSet::stereo(),true)),params(*this,nullptr,"NoiseBaseState",layout()) {
+        .withOutput("Output",juce::AudioChannelSet::stereo(),true).withInput("Reference",juce::AudioChannelSet::stereo(),false)),params(*this,nullptr,"NoiseBaseState",layout()) {
     formats.registerBasicFormats();
 }
 NoiseBaseProcessor::~NoiseBaseProcessor(){
@@ -45,13 +46,20 @@ void NoiseBaseProcessor::prepareToPlay(double rate,int block) {
     generator.prepare(rate,getTotalNumOutputChannels());playbackRate=rate;
     proceduralFade.reset(rate,.035);proceduralFade.setCurrentAndTargetValue(0);ambienceGain.reset(rate,.035);ambienceGain.setCurrentAndTargetValue(0);wasProcedural=false;
     voice.prepare(rate);voiceActive=false;transport.prepareToPlay(block,rate);
-    NoiseProfile saved;{const juce::ScopedLock lock(profileStateLock);saved=storedProfile;}
-    if(validAmbienceProfile(saved))queueProfile(saved);
+    reference.prepare(rate);externalVersion=0;wasExternal=false;
+    for(auto* profile:{&fileGeneratorProfile,&externalProfile,&activeReferenceProfile})for(auto* values:{&profile->power,&profile->ambiencePower[0],&profile->ambiencePower[1],&profile->ambienceCorrelation})values->reserve(4097);
+    NoiseProfile saved;bool external=false;{const juce::ScopedLock lock(profileStateLock);saved=storedProfile;external=storedProfileExternal;}
+    auto active=externalReferenceSelected()&&!referenceResetRequested.load()?snapshotReference():NoiseProfile{};
+    if(validAmbienceProfile(active)){
+        const juce::SpinLock::ScopedLockType lock(pendingLock);pendingProfile=std::move(active);pendingExternal=true;pending.store(true,std::memory_order_release);
+    }else if(validAmbienceProfile(saved))queueProfile(saved,external);
 }
 void NoiseBaseProcessor::releaseResources(){transport.releaseResources();}
 bool NoiseBaseProcessor::isBusesLayoutSupported(const BusesLayout& buses) const {
     auto in=buses.getMainInputChannelSet(),out=buses.getMainOutputChannelSet();
-    return in==out && (out==juce::AudioChannelSet::mono() || out==juce::AudioChannelSet::stereo());
+    auto reference=buses.getChannelSet(true,1);
+    return in==out && (out==juce::AudioChannelSet::mono() || out==juce::AudioChannelSet::stereo())
+        && (reference.isDisabled()||reference==juce::AudioChannelSet::mono()||reference==juce::AudioChannelSet::stereo());
 }
 void NoiseBaseProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiBuffer&) {
     processAudio(buffer,false);
@@ -59,16 +67,39 @@ void NoiseBaseProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::Mid
 void NoiseBaseProcessor::processBlockBypassed(juce::AudioBuffer<float>& buffer,juce::MidiBuffer&) {
     processAudio(buffer,true);
 }
-void NoiseBaseProcessor::processAudio(juce::AudioBuffer<float>& buffer,bool forceBypass) {
+void NoiseBaseProcessor::processAudio(juce::AudioBuffer<float>& hostBuffer,bool forceBypass) {
     juce::ScopedNoDenormals noDenormals;
+    auto buffer=getBusBuffer(hostBuffer,false,0);
+    bool external=externalReferenceSelected();
+    if(external!=wasExternal){
+        if(external){
+            bool held=value("auto")<=.5f&&referenceSnapshotValid.load()&&validAmbienceProfile(externalProfile);
+            if(held){generator.setProfile(externalProfile);ambienceReady.store(true);}
+            else{generator.clearProfile();ambienceReady.store(false);referenceSnapshotValid.store(false);}
+            externalVersion=0;
+        }
+        else{if(!generator.setProfile(fileGeneratorProfile))generator.clearProfile();ambienceReady.store(validAmbienceProfile(fileGeneratorProfile));}
+        wasExternal=external;
+    }
+    if(referenceResetRequested.exchange(false)){reference.reset();externalVersion=0;generator.clearProfile();ambienceReady.store(false);referenceSnapshotValid.store(false);referenceSnapshotDirty=false;}
+    bool connected=!standaloneMode.load()&&getBusCount(true)>1&&getBus(true,1)->isEnabled();referenceConnected.store(connected);
+    if(external&&connected&&value("auto")>.5f){auto source=getBusBuffer(hostBuffer,true,1);reference.push(source);}
+    referenceFailed.store(reference.failed());
     bool standaloneFile=standaloneMode.load()&&fileMode.load();
     double filePosition=standaloneFile?transport.getCurrentPosition():0;
     if(standaloneMode.load() && fileMode.load()) {juce::AudioSourceChannelInfo info(&buffer,0,buffer.getNumSamples());transport.getNextAudioBlock(info);}
     if(resetRequested.exchange(false)){engine.resetNoise();voice.resetHistory();voiceActive=true;}
     if(pending.load(std::memory_order_acquire)) {
         const juce::SpinLock::ScopedTryLockType lock(pendingLock);
-        if(lock.isLocked()) {if(!engine.setProfile(pendingProfile))engine.resetNoise();if(!generator.setProfile(pendingProfile))generator.clearProfile();pending.store(false,std::memory_order_release);}
+        if(lock.isLocked()) {
+            if(!pendingExternal){fileGeneratorProfile=pendingProfile;if(!engine.setProfile(pendingProfile))engine.resetNoise();}
+            if(external==pendingExternal){if(!generator.setProfile(pendingProfile))generator.clearProfile();ambienceReady.store(validAmbienceProfile(pendingProfile));
+                if(external){externalProfile=pendingProfile;referenceSnapshotDirty=validAmbienceProfile(pendingProfile);}}
+            pending.store(false,std::memory_order_release);
+        }
     }
+    if(external&&(value("auto")>.5f||!ambienceReady.load())&&reference.readProfile(externalProfile,externalVersion)){generator.setProfile(externalProfile);ambienceReady.store(true);referenceSnapshotDirty=true;}
+    if(referenceSnapshotDirty){const juce::SpinLock::ScopedTryLockType lock(activeReferenceLock);if(lock.isLocked()){activeReferenceProfile=externalProfile;referenceSnapshotValid.store(true);referenceSnapshotDirty=false;}}
     bool usingTimeline=false,knownSpeech=false;float speech=1;
     if(standaloneFile){
         const juce::SpinLock::ScopedTryLockType lock(regionLock);
@@ -101,7 +132,9 @@ void NoiseBaseProcessor::processAudio(juce::AudioBuffer<float>& buffer,bool forc
 }
 juce::AudioProcessorEditor* NoiseBaseProcessor::createEditor(){return new NoiseBaseEditor(*this);}
 void NoiseBaseProcessor::getStateInformation(juce::MemoryBlock& dest) {auto state=params.copyState();state.removeChild(state.getChildWithName("AmbienceProfile"),nullptr);
-    {const juce::ScopedLock lock(profileStateLock);auto profile=ambienceProfileState(storedProfile);if(profile.isValid()){profile.setProperty("label",getFileName(),nullptr);state.appendChild(profile,nullptr);}}
+    bool external=externalReferenceSelected();NoiseProfile saved=external?snapshotReference():NoiseProfile{};
+    {const juce::ScopedLock lock(profileStateLock);if(!validAmbienceProfile(saved)&&storedProfileExternal==external)saved=storedProfile;}
+    auto profile=ambienceProfileState(saved);if(profile.isValid()){profile.setProperty("label",external?"SIDECHAIN REFERENCE":getFileName(),nullptr);state.appendChild(profile,nullptr);}
     auto xml=state.createXml();copyXmlToBinary(*xml,dest);}
 void NoiseBaseProcessor::setStateInformation(const void* data,int size) {
     if(auto xml=getXmlFromBinary(data,size))if(xml->hasTagName(params.state.getType())){
@@ -111,24 +144,29 @@ void NoiseBaseProcessor::setStateInformation(const void* data,int size) {
         }
         // Existing 1.4 sessions keep their removed-noise route until selected.
         if(!state.getChildWithProperty("id","procedural").isValid()){juce::ValueTree mode("PARAM");mode.setProperty("id","procedural",nullptr);mode.setProperty("value",0.0f,nullptr);state.appendChild(mode,nullptr);}
+        if(!state.getChildWithProperty("id","externalReference").isValid()){juce::ValueTree source("PARAM");source.setProperty("id","externalReference",nullptr);source.setProperty("value",0.0f,nullptr);state.appendChild(source,nullptr);}
+        bool external=(float)state.getChildWithProperty("id","externalReference")["value"]>.5f;
+        if(external)referenceResetRequested.store(true);
         NoiseProfile restored;auto saved=state.getChildWithName("AmbienceProfile");
-        if(readAmbienceProfile(saved,restored)){queueProfile(restored);const juce::ScopedLock lock(statusLock);fileName=saved["label"].toString();status="PROFILE RESTORED  /  source clip not required";}
-        else {queueProfile(NoiseProfile{});}
+        if(readAmbienceProfile(saved,restored)){queueProfile(restored,external);const juce::ScopedLock lock(statusLock);fileName=saved["label"].toString();status="PROFILE RESTORED  /  source clip not required";}
+        else {queueProfile(NoiseProfile{},external);}
         params.replaceState(state);
     }
 }
 void NoiseBaseProcessor::setStatus(const juce::String& text){const juce::ScopedLock lock(statusLock);status=text;}
+NoiseProfile NoiseBaseProcessor::snapshotReference() const {const juce::SpinLock::ScopedLockType lock(activeReferenceLock);return referenceSnapshotValid.load()?activeReferenceProfile:NoiseProfile{};}
 juce::String NoiseBaseProcessor::getStatus() const {const juce::ScopedLock lock(statusLock);return status;}
 juce::String NoiseBaseProcessor::getFileName() const {const juce::ScopedLock lock(statusLock);return fileName;}
-void NoiseBaseProcessor::queueProfile(const NoiseProfile& profile) {
-    {const juce::ScopedLock lock(profileStateLock);storedProfile=validAmbienceProfile(profile)?profile:NoiseProfile{};}
-    ambienceReady.store(validAmbienceProfile(profile));
-    const juce::SpinLock::ScopedLockType lock(pendingLock);pendingProfile=profile;pending.store(true,std::memory_order_release);
+void NoiseBaseProcessor::queueProfile(const NoiseProfile& profile,bool external) {
+    {const juce::ScopedLock lock(profileStateLock);storedProfile=validAmbienceProfile(profile)?profile:NoiseProfile{};storedProfileExternal=external;}
+    if(externalReferenceSelected()==external)ambienceReady.store(validAmbienceProfile(profile));
+    const juce::SpinLock::ScopedLockType lock(pendingLock);pendingProfile=profile;pendingExternal=external;pending.store(true,std::memory_order_release);
 }
 void NoiseBaseProcessor::loadRecording(const juce::File& file) {
     if(busy.load())return;
     std::unique_ptr<juce::AudioFormatReader> reader(formats.createReaderFor(file));
     if(!reader || reader->numChannels>2 || reader->sampleRate<8000 || reader->lengthInSamples<=0) {setStatus("Use a nonempty mono/stereo WAV, AIFF, FLAC or MP3");return;}
+    params.getParameter("externalReference")->setValueNotifyingHost(0);
     stopPlayback();transport.setSource(nullptr);readerSource.reset();queueProfile(NoiseProfile{});
     resetRequested.store(true);
     {const juce::SpinLock::ScopedLockType lock(regionLock);noiseRegions.reset();fileVoice.reset();selectedRegion=-1;}noiseRegionCount.store(0);activeNoiseRegion.store(0);
@@ -170,7 +208,8 @@ void NoiseBaseProcessor::serviceJobs(){
 }
 void NoiseBaseProcessor::learnTrack(){
     params.getParameter("auto")->setValueNotifyingHost(1);
-    if(fileMode.load())scanRecording();
+    if(externalReferenceSelected()){queueProfile(NoiseProfile{},true);referenceResetRequested.store(true);setStatus("SIDECHAIN / RESTARTING REFERENCE ANALYSIS");}
+    else if(fileMode.load())scanRecording();
     else{resetProfile();setStatus("AUTO RESTARTED / PLAY THE TRACK TO LEARN ITS BACKGROUNDS");}
 }
 void NoiseBaseProcessor::saveRecording(const juce::File& output,double ambienceSeconds){
@@ -182,7 +221,8 @@ void NoiseBaseProcessor::saveRecording(const juce::File& output,double ambienceS
     bool noiseOutput=value("noiseOnly")>.5f&&!bypassed,followTrack=value("auto")>.5f;
     if(!jobs)jobs=std::make_unique<juce::ThreadPool>(1);
     if(generated){
-        NoiseProfile profile;{const juce::ScopedLock lock(profileStateLock);profile=storedProfile;}
+        bool external=externalReferenceSelected();NoiseProfile profile=external?snapshotReference():NoiseProfile{};
+        {const juce::ScopedLock lock(profileStateLock);if(!validAmbienceProfile(profile)&&storedProfileExternal==external)profile=storedProfile;}
         setStatus("GENERATING / SEAMLESS PROCEDURAL NOISE");
         jobs->addJob(new FunctionJob([state,profile,output,ambienceSeconds,blend,level]{
             try{exportAmbience(profile,output,ambienceSeconds,blend,level,&state->progress,&state->cancel);state->status="PROCEDURAL LOOP PRINTED / "+output.getFileName();}

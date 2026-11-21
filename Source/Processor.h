@@ -1,6 +1,7 @@
 #pragma once
 #include "Offline.h"
 #include "TapeReaderSource.h"
+#include "ReferenceLearner.h"
 
 class NoiseBaseProcessor final : public juce::AudioProcessor {
 public:
@@ -18,7 +19,7 @@ public:
     const juce::String getName() const override {return "NoiseBase";}
     bool acceptsMidi() const override {return false;}
     bool producesMidi() const override {return false;}
-    double getTailLengthSeconds() const override {return .15;}
+    double getTailLengthSeconds() const override {return proceduralSelected()?std::numeric_limits<double>::infinity():.15;}
     int getNumPrograms() override {return 1;}
     int getCurrentProgram() override {return 0;}
     void setCurrentProgram(int) override {}
@@ -39,6 +40,8 @@ public:
     void setLooping(bool);
     bool isLooping() const {return loopPlayback.load();}
     bool proceduralSelected() const {return value("noiseOnly")>.5f&&value("procedural")>.5f;}
+    bool externalReferenceSelected() const {return !standaloneMode.load()&&value("externalReference")>.5f;}
+    bool waitForReferenceForTest(int ms){return reference.waitForIdleForTest(ms);}
     double playbackPosition() const {return proceduralSelected()?ambienceSamples.load()/playbackRate:transport.getCurrentPosition();}
     double playbackDuration() const {return proceduralSelected()?0:transport.getLengthInSeconds();}
     bool isPlaying() const {return proceduralSelected()?ambiencePlaying.load():transport.isPlaying();}
@@ -48,17 +51,28 @@ public:
     std::atomic<bool> standaloneMode{false},fileMode{false},busy{false},analysed{false},detectorAvailable{false};
     std::atomic<bool> detectorFailed{false};
     std::atomic<bool> ambienceReady{false};
+    std::atomic<bool> referenceConnected{false},referenceFailed{false};
     std::atomic<int> noiseRegionCount{0},activeNoiseRegion{0};
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout layout();
     float value(const char* id) const {return params.getRawParameterValue(id)->load();}
     void setStatus(const juce::String&);
-    void queueProfile(const NoiseProfile&);
+    void queueProfile(const NoiseProfile&,bool external=false);
+    NoiseProfile snapshotReference() const;
     void processAudio(juce::AudioBuffer<float>&,bool forceBypass);
     DenoiseEngine engine;
     ProceduralNoise generator;
     juce::SmoothedValue<float> proceduralFade,ambienceGain;
     NoiseProfile storedProfile;
+    bool storedProfileExternal=false,pendingExternal=false,wasExternal=false;
+    NoiseProfile fileGeneratorProfile,externalProfile;
+    NoiseProfile activeReferenceProfile;
+    mutable juce::SpinLock activeReferenceLock;
+    std::atomic<bool> referenceSnapshotValid{false};
+    bool referenceSnapshotDirty=false;
+    uint64_t externalVersion=0;
+    ReferenceLearner reference;
+    std::atomic<bool> referenceResetRequested{false};
     mutable juce::CriticalSection profileStateLock;
     std::atomic<bool> ambiencePlaying{false};
     std::atomic<int64_t> ambienceSamples{0};

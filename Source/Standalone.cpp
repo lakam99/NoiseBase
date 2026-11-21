@@ -166,6 +166,8 @@ juce::var validatePlugin(const juce::File& file,const juce::File& snapshot,const
         plugin->releaseResources();
     }
     stage("live input rates passed");
+    if(!verifyHostedReference(*plugin,*report))throw std::runtime_error("VST3 external-reference routing or synthesis failed.");
+    plugin->setStateInformation(saved.getData(),(int)saved.getSize());
     // Load a self-contained learned model through the real VST3 component state.
     // This exercises the JUCE host wrapper as well as the processor callback.
     NoiseBaseProcessor stateBuilder;auto modelState=stateBuilder.params.copyState();
@@ -425,6 +427,7 @@ public:
                     processor.params.getParameter("skin")->setValueNotifyingHost(skin*.5f);
                     processor.params.getParameter("noiseOnly")->setValueNotifyingHost(args.contains("--noise-only")||args.contains("--procedural")?1:0);
                     processor.params.getParameter("procedural")->setValueNotifyingHost(args.contains("--procedural")?1:0);
+                    processor.params.getParameter("externalReference")->setValueNotifyingHost(args.contains("--sidechain")?1:0);
                     NoiseBaseEditor editor(processor);
                     if(!option("--update-progress").isEmpty()){
                         double progress=option("--update-progress").getDoubleValue();auto phase=option("--update-phase").isEmpty()?juce::String("DOWNLOADING"):option("--update-phase");

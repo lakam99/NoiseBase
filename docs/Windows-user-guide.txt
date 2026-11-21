@@ -1,4 +1,4 @@
-NOISEBASE 1.6.0 - WINDOWS x64
+NOISEBASE 1.7.0 - WINDOWS x64
 Automatic dialogue denoising, with an analog hardware-style interface.
 
 IN THIS PACKAGE
@@ -95,6 +95,33 @@ generated level, OUTPUT TRIM sets gain. Reduction and voice detail are denoiser
 controls. BYPASS restores the original. Existing sessions keep REMOVED routing
 until PROCEDURAL is explicitly selected.
 
+ANOTHER TRACK AS A PROCEDURAL REFERENCE (VST3)
+1. Insert NoiseBase on a separate ambience track/bus that the DAW processes.
+2. Enable its Reference sidechain input in the DAW and send the original
+   reference/dialogue track to it. Sends must remain active during learning.
+3. Set REFERENCE to SIDECHAIN, select NOISE BASE and PROCEDURAL, and leave AUTO on.
+4. Play background between dialogue. The VFD reports learning and readiness.
+   MIX and OUTPUT TRIM set the generated bed level.
+
+The other track supplies statistics, never a direct signal mixed into the
+output. The worker excludes detected speech with analysis look-ahead, then
+learns spectrum, stereo balance/correlation and gentle variation. AUTO follows
+stable changes; HOLD freezes the active texture. LEARN clears that reference
+and starts again. The main input remains the source for CLEAN/REMOVED and bypass.
+
+A stopped or digitally silent reference leaves the last usable profile intact.
+Its compact model and the reference switch are saved in DAW state; restoration
+can generate without that track. Procedural mode reports an infinite tail, but
+the DAW must keep processing the effect; disable suspension if necessary.
+PRINT WAV exports the active model, defaulting to a 60-second seamless loop.
+CLIP returns to a loaded file; LOAD CLIP also selects that reference source.
+
+Sidechain learning only sees audio delivered by the DAW, not its future timeline.
+It needs a confidently quiet passage (typically about a second including the
+speech guard). It matches a statistical background, not recognizable events.
+Speech detection can misclassify material, so audition it. The reference selector
+is VST3-only; standalone still learns from loaded clips.
+
 REMOVED-NOISE MONITORING AND NOISE-BASE EXPORT
 The NOISE BASE / CLEAN switch selects the processed output in both formats.
 NOISE BASE with REMOVED outputs the component removed by the denoiser. In a VST3 this plays
@@ -134,6 +161,7 @@ CONTROLS
   OUTPUT TRIM     -12 to +12 dB; true bypass ignores this trim.
   AUTO / HOLD     Adapt from non-speech, or freeze the current noise floor.
   LEARN           Re-analyze the whole loaded file, or reset incoming learning.
+  REFERENCE       VST3 procedural source: SIDECHAIN or loaded CLIP.
   BYPASS / IN     Switch between unchanged and processed audio.
   FACEPLATE       Three-position skin selector. No change to audio character.
 

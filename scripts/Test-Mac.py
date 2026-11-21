@@ -24,6 +24,7 @@ def check(name,*args):
 check('engine','--self-test')
 check('theme-icon','--theme-test')
 check('vst3','--validate-plugin',plugin,'--snapshot',reports/'vst3-host.png')
+check('sidechain-ui','--render-ui',reports/'sidechain.png','--plugin-layout','--procedural','--sidechain','--skin',2)
 fixture=build/'fixture.wav'
 rng=random.Random(417)
 with wave.open(str(fixture),'wb') as file:

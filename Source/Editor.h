@@ -37,13 +37,13 @@ private:
     NoiseBaseProcessor& processor;
     HardwareLook look;
     juce::Slider reduction,preserve,mix,output,skin;
-    juce::ToggleButton automatic{"AUTO LEARN"},bypass{"BYPASS"},noiseOnly{"NOISE BASE"},procedural{"PROCEDURAL"};
+    juce::ToggleButton automatic{"AUTO LEARN"},bypass{"BYPASS"},noiseOnly{"NOISE BASE"},procedural{"PROCEDURAL"},reference{"REFERENCE"};
     juce::TextButton reset{"LEARN"},load{"LOAD TAPE"},scan{"SCAN"},play,stop,loop,beginning,save{"PRINT WAV"},devices{"PATCH BAY"};
     juce::TextButton updates{"UPDATES"};
     std::array<VfdLine,5> displayLines;
     bool updateBusy=false,downloadingUpdate=false;
     std::vector<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>> sliders;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> autoAttachment,bypassAttachment,noiseAttachment,proceduralAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> autoAttachment,bypassAttachment,noiseAttachment,proceduralAttachment,referenceAttachment;
     std::unique_ptr<juce::FileChooser> chooser;
     float inputNeedle=0,outputNeedle=0,reductionNeedle=0;
 };

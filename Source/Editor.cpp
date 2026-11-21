@@ -26,10 +26,10 @@ void HardwareLook::drawToggleButton(juce::Graphics& g,juce::ToggleButton& b,bool
     auto r=b.getLocalBounds().toFloat();auto art=r.removeFromLeft(43).reduced(5,0);
     g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
     g.drawImage(RasterAssets::get().switches[b.getToggleState()?0:1],art,juce::RectanglePlacement::stretchToFit);
-    bool automatic=b.getButtonText().contains("AUTO"),noise=b.getButtonText()=="NOISE BASE",procedural=b.getButtonText()=="PROCEDURAL";g.setFont(labelFont(10));
+    bool automatic=b.getButtonText().contains("AUTO"),noise=b.getButtonText()=="NOISE BASE",procedural=b.getButtonText()=="PROCEDURAL",reference=b.getButtonText()=="REFERENCE";g.setFont(labelFont(10));
     auto text=r.reduced(4,1);auto top=text.removeFromTop(15);
-    g.setColour(ink().withAlpha(b.getToggleState()?1.0f:.40f));g.drawText(automatic?"AUTO":noise?"NOISE BASE":procedural?"PROCEDURAL":"BYPASS",top,juce::Justification::centredLeft);
-    g.setColour(ink().withAlpha(b.getToggleState()?.40f:1.0f));g.drawText(automatic?"HOLD":noise?"CLEAN":procedural?"REMOVED":"IN",text,juce::Justification::centredLeft);
+    g.setColour(ink().withAlpha(b.getToggleState()?1.0f:.40f));g.drawText(automatic?"AUTO":noise?"NOISE BASE":procedural?"PROCEDURAL":reference?"SIDECHAIN":"BYPASS",top,juce::Justification::centredLeft);
+    g.setColour(ink().withAlpha(b.getToggleState()?.40f:1.0f));g.drawText(automatic?"HOLD":noise?"CLEAN":procedural?"REMOVED":reference?"CLIP":"IN",text,juce::Justification::centredLeft);
 }
 void HardwareLook::drawButtonBackground(juce::Graphics& g,juce::Button& b,const juce::Colour&,bool,bool down) {
     auto r=b.getLocalBounds().toFloat().reduced(1);
@@ -67,10 +67,12 @@ NoiseBaseEditor::NoiseBaseEditor(NoiseBaseProcessor& p):AudioProcessorEditor(p),
     bypassAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(p.params,"bypass",bypass);
     noiseAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(p.params,"noiseOnly",noiseOnly);
     proceduralAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(p.params,"procedural",procedural);
+    if(!processor.standaloneMode.load()){addAndMakeVisible(reference);referenceAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(p.params,"externalReference",reference);}
+    reference.setTooltip("SIDECHAIN learns ambience from another DAW track. Select NOISE BASE + PROCEDURAL to generate it here; HOLD freezes the reference. CLIP uses LOAD CLIP instead.");
     noiseOnly.setTooltip("Select noise-base output or cleaned recording. Bypass restores the original.");
-    procedural.setTooltip("PROCEDURAL generates continuous fresh ambience from a loaded clip's quiet-frame statistics. REMOVED monitors the denoiser residual, which can include speech.");
+    procedural.setTooltip("PROCEDURAL generates continuous fresh ambience from the selected clip or sidechain reference. REMOVED monitors the denoiser residual, which can include speech.");
     reset.onClick=[this]{processor.learnTrack();};
-    reset.setTooltip("Re-analyze the entire loaded track. For live DAW audio, restart automatic learning as the host plays.");
+    reset.setTooltip("Re-analyze the whole loaded clip, or restart incoming analysis for a live sidechain/DAW track.");
     automatic.setTooltip("Automatically follow background changes throughout the track. HOLD freezes the current noise floor.");
     for(auto* c:{&load,&scan,&save})addAndMakeVisible(c);
     load.setButtonText("LOAD CLIP");load.setTooltip("Learn a procedural profile from a mono/stereo reference clip; saved profiles work without the original file");
@@ -120,6 +122,7 @@ void NoiseBaseEditor::paint(juce::Graphics& g) {
     engraved(g,"DIALOGUE RESTORATION",{270,69,420,17},look.ink().withAlpha(.75f),9);
     engraved(g,"FACEPLATE",{65,22,110,16},look.ink(),9);
     engraved(g,"I  /  G  /  W",{65,94,110,11},look.ink(),10);
+    if(!processor.standaloneMode.load())engraved(g,"REFERENCE",{756,26,140,16},look.ink(),10);
     drawMeter(g,{64,112,260,150},"INPUT  /  dBFS",inputNeedle,false);
     drawMeter(g,{350,112,260,150},"REDUCTION  /  dB",reductionNeedle,true);
     drawMeter(g,{636,112,260,150},"OUTPUT  /  dBFS",outputNeedle,false);
@@ -155,6 +158,11 @@ void NoiseBaseEditor::paint(juce::Graphics& g) {
         if(processor.busy.load())live+="  "+juce::String((int)(processor.jobProgress.load()*100))+"%";
         else if(updateBusy)live="CHECKING GITHUB RELEASES";
         else if(standalone&&(processor.fileMode.load()||processor.ambienceReady.load()))live=(processor.isPlaying()?"PLAY  | ":!generated&&processor.playbackPosition()>=processor.playbackDuration()-.001?"END   | ":processor.playbackPosition()>0?"PAUSE | ":"STOP  | ")+live+(!generated&&processor.isLooping()?" | LOOP ON":"");
+        if(processor.externalReferenceSelected()){
+            if(processor.referenceFailed.load())live="REFERENCE DETECTOR UNAVAILABLE";
+            else if(!processor.ambienceReady.load())live=processor.referenceConnected.load()?"LEARNING REFERENCE / PLAY A QUIET PASSAGE":"ENABLE SIDECHAIN / SEND A REFERENCE TRACK";
+            else live=automatic.getToggleState()?(processor.referenceConnected.load()?"FOLLOWING REFERENCE BACKGROUND":"REFERENCE READY / CONTINUING AMBIENCE"):"REFERENCE HELD / CONTINUING AMBIENCE";
+        }
         displayLines[0].draw(g,controls,{82,495,796,17},1.65f,false);
         if(updateBusy&&downloadingUpdate){
             auto progress=onUpdateProgress?onUpdateProgress():std::pair<double,juce::String>{-1,"PREPARING"};
@@ -163,7 +171,7 @@ void NoiseBaseEditor::paint(juce::Graphics& g) {
             for(int i=0;i<segments;++i){bool lit=progress.first>=0?i<filled:(i-cursor+segments)%segments<6;g.setColour(lit?juce::Colour(0xffa4ffe9):juce::Colour(0xff245849));g.fillRect(295.0f+i*10.1f,522.0f,7.7f,8.0f);}
             displayLines[4].draw(g,progress.first>=0?juce::String((int)(juce::jlimit(0.0,1.0,progress.first)*100))+"%":"...",{803,518,75,17},1.65f,false);
         }else displayLines[1].draw(g,routing+" | "+live,{82,518,796,17});
-        displayLines[2].draw(g,processor.fileMode.load()||processor.ambienceReady.load()?processor.getFileName():"NO CLIP PROFILE LOADED",{82,543,558,17});
+        displayLines[2].draw(g,processor.externalReferenceSelected()?"SIDECHAIN REFERENCE / FRESH STATISTICAL AMBIENCE":processor.fileMode.load()||processor.ambienceReady.load()?processor.getFileName():"NO CLIP PROFILE LOADED",{82,543,558,17});
         auto time=[](double value){int seconds=(int)std::max(0.0,value);return juce::String(seconds/60).paddedLeft('0',2)+":"+juce::String(seconds%60).paddedLeft('0',2);};
         displayLines[3].draw(g,standalone?(generated?time(processor.playbackPosition())+" / INF":time(processor.playbackPosition())+" / "+time(processor.playbackDuration())):"HOST CLOCK",{683,543,195,17},1.65f,false);
     }
@@ -171,6 +179,7 @@ void NoiseBaseEditor::paint(juce::Graphics& g) {
 }
 void NoiseBaseEditor::resized() {
     skin.setBounds(85,37,74,63);
+    reference.setBounds(760,51,136,34);
     for(int i=0;i<4;++i){juce::Slider* controls[]{&reduction,&preserve,&mix,&output};controls[i]->setBounds(78+i*222,337,138,122);}
     automatic.setBounds(68,270,145,32);reset.setBounds(224,274,82,25);noiseOnly.setBounds(330,270,165,32);procedural.setBounds(520,270,180,32);bypass.setBounds(750,270,140,32);
     load.setBounds(72,596,118,32);scan.setBounds(198,596,80,32);save.setBounds(566,596,118,32);
@@ -185,8 +194,8 @@ void NoiseBaseEditor::timerCallback() {
     int next=juce::jlimit(0,2,(int)std::round(processor.params.getRawParameterValue("skin")->load()));
     if(next!=look.skin){look.skin=next;sendLookAndFeelChange();}
     inputNeedle=.78f*inputNeedle+.22f*processor.inputLevel.load();outputNeedle=.78f*outputNeedle+.22f*processor.outputLevel.load();reductionNeedle=.78f*reductionNeedle+.22f*processor.reductionLevel.load();
-    bool busy=processor.busy.load(),generated=processor.proceduralSelected()&&!bypass.getToggleState();load.setEnabled(!busy);scan.setEnabled(!busy&&processor.fileMode.load());save.setEnabled(!busy&&(generated?processor.ambienceReady.load():processor.analysed.load()));
-    reduction.setEnabled(!generated);preserve.setEnabled(!generated);automatic.setEnabled(!generated);reset.setEnabled(!busy&&(!generated||processor.fileMode.load()));
+    bool busy=processor.busy.load(),generated=processor.proceduralSelected()&&!bypass.getToggleState(),external=processor.externalReferenceSelected();load.setEnabled(!busy);scan.setEnabled(!busy&&!external&&processor.fileMode.load());save.setEnabled(!busy&&(generated?processor.ambienceReady.load():processor.analysed.load()));
+    reduction.setEnabled(!generated);preserve.setEnabled(!generated);automatic.setEnabled(!generated||external);reset.setEnabled(!busy&&(external||!generated||processor.fileMode.load()));reference.setEnabled(!busy);
     for(auto* button:{&play,&stop,&beginning})button->setEnabled(generated?processor.ambienceReady.load():processor.fileMode.load());
     loop.setEnabled(!generated&&processor.fileMode.load());
     auto transportId=processor.isPlaying()?"transport-pause":"transport-play";

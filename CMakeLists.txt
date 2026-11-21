@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(NoiseBase VERSION 1.6.0 LANGUAGES C CXX)
+project(NoiseBase VERSION 1.7.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -10,7 +10,7 @@ juce_add_binary_data(NoiseBaseModel SOURCES resources/silero_vad.onnx
     resources/generated/ivory.png resources/generated/graphite.png resources/generated/walnut.png
     resources/generated/knob.png resources/generated/meter.png resources/generated/switches.png
     resources/generated/buttons.png resources/generated/lamps.png
-    resources/generated/vfd.png resources/generated/transport.png resources/generated/app-icon.png)
+    resources/generated/vfd.png resources/generated/transport.png resources/generated/app-icon.png resources/tests/reference-speech.wav)
 juce_add_plugin(NoiseBase
     COMPANY_NAME "RedWeb" BUNDLE_ID "studio.redweb.noisebase"
     PLUGIN_MANUFACTURER_CODE Rdwb PLUGIN_CODE Nbas
@@ -21,7 +21,7 @@ juce_add_plugin(NoiseBase
     NEEDS_WEB_BROWSER FALSE NEEDS_CURL FALSE)
 target_sources(NoiseBase PRIVATE
     Source/DenoiseEngine.cpp Source/VoiceDetector.cpp Source/AsyncCleanup.cpp Source/Offline.cpp Source/NoiseOutputTests.cpp Source/ProceduralNoise.cpp Source/ProceduralTests.cpp Source/NoiseTimeline.cpp Source/TrackTests.cpp Source/HostSafetyTests.cpp
-    Source/Processor.cpp Source/Editor.cpp Source/RasterAssets.cpp Source/VfdDisplay.cpp Source/PluginEntry.cpp)
+    Source/ReferenceLearner.cpp Source/ReferenceTests.cpp Source/Processor.cpp Source/Editor.cpp Source/RasterAssets.cpp Source/VfdDisplay.cpp Source/PluginEntry.cpp)
 target_include_directories(NoiseBase PUBLIC Source "${CMAKE_CURRENT_SOURCE_DIR}/third_party/JUCE/modules")
 target_include_directories(NoiseBase PRIVATE third_party/onnxruntime/build/native/include)
 target_compile_definitions(NoiseBase PUBLIC
