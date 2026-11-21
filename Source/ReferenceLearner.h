@@ -9,9 +9,10 @@ public:
     ReferenceLearner();
     ~ReferenceLearner();
     void prepare(double sampleRate);
-    void push(const juce::AudioBuffer<float>&);
+    void push(const juce::AudioBuffer<float>&,int64_t sourcePosition=-1);
     void reset(); // audio-thread request; clears the learned reference
-    bool readProfile(NoiseProfile&,uint64_t& version); // nonblocking, preallocate destination
+    void breakStream(); // discard queued/partial analysis, retain the learned model
+    bool readProfile(NoiseProfile&,uint64_t& version,int64_t* position=nullptr,bool currentStreamOnly=false); // nonblocking, preallocate destination
     NoiseProfile snapshot() const; // state saving/export, never called by audio
     bool ready() const;
     bool failed() const;
@@ -28,3 +29,4 @@ private:
 
 juce::var runReferenceTests();
 bool verifyHostedReference(juce::AudioProcessor&,juce::DynamicObject& report);
+bool verifyHostedBridge(juce::AudioProcessor&,juce::DynamicObject& report);

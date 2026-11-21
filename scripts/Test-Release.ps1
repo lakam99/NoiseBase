@@ -15,6 +15,7 @@ Invoke-Check @('--theme-test') (Join-Path $folder 'window-theme-icon.json')
 Invoke-Check @('--render-ui',(Join-Path $folder 'update-downloading.png'),'--skin','2','--update-progress','0.42') (Join-Path $folder 'update-downloading.json')
 Invoke-Check @('--render-ui',(Join-Path $folder 'update-verifying.png'),'--skin','2','--update-progress','-1','--update-phase','VERIFYING') (Join-Path $folder 'update-verifying.json')
 Invoke-Check @('--render-ui',(Join-Path $folder 'sidechain-vst3.png'),'--plugin-layout','--procedural','--sidechain','--skin','2') (Join-Path $folder 'sidechain-vst3.json')
+Invoke-Check @('--render-ui',(Join-Path $folder 'gap-bridge-vst3.png'),'--plugin-layout','--procedural','--sidechain','--bridge','--reference-preview','--skin','2') (Join-Path $folder 'gap-bridge-vst3.json')
 Invoke-Check @('--validate-plugin',$plugin,'--snapshot',(Join-Path $Build 'host-wrapper.png')) (Join-Path $folder 'vst3.json')
 $fixture=Join-Path $Build 'fixture.wav'
 @'

@@ -15,7 +15,8 @@ The standalone application scans the entire recording and follows different back
 - Automatic whole-file noise profiling, with local profiles for changing backgrounds and speech-aware live adaptation.
 - Reduction, voice detail, dry/clean blend, output trim, and latency-aligned bypass.
 - Continuous procedural ambience from one reference clip, saved with the session.
-- Optional VST3 sidechain reference: learn another track's background and generate matching continuous ambience on this track.
+- Optional VST3 sidechain reference: learn another track's background and generate matching ambience while the reference plays.
+- Optional gap bridging with compensated lookahead, an adjustable maximum gap, and transitions into the next clip's background.
 - Removed-noise monitoring, plus procedural seamless-loop and noise-base WAV export.
 - Mono and stereo processing with a shared stereo mask.
 - Standalone file loading, automatic scanning, playback, and WAV export.
@@ -54,9 +55,13 @@ The compact statistical model is saved in DAW state and standalone preferences. 
 
 Insert NoiseBase on a dedicated ambience track or bus. Enable its **Reference** sidechain in your DAW and send the reference/dialogue track to that input. Select **REFERENCE → SIDECHAIN**, **NOISE BASE**, **PROCEDURAL**, and **AUTO**. Play a passage containing background between words: NoiseBase learns spectral shape, stereo balance/correlation and level variation, then generates fresh ambience on its main output. The reference signal is never mixed directly into that output. Use MIX and OUTPUT TRIM to set the bed level.
 
-AUTO follows stable background changes in the reference. **HOLD** freezes the active texture; **LEARN** clears it and restarts sidechain analysis. A stopped or digitally silent reference leaves the last profile generating. The compact active model and source switch are saved with DAW state, so a restored instance can generate without the reference. Procedural mode reports an infinite tail; the DAW must keep processing the plug-in (disable its suspension if needed). **CLIP** returns to a loaded-file profile; **LOAD CLIP** selects that source automatically. Clean and removed-noise processing still use the main input.
+Sidechain output follows DAW playback and actual reference activity. Host stop, a disconnected send or digital silence fades the bed out; reference audio returning during playback fades it back in. **HOLD** freezes the texture while still following playback/input. In **AUTO**, seeking or wrapping the timeline discards old-location analysis and waits for a new quiet profile at the destination; HOLD retains its model across jumps. **LEARN** clears the profile and restarts analysis. The active model and source switch are saved with DAW state, but restored sidechain output still waits for reference audio. The input meter and numeric VFD level show the sidechain, and the VFD displays host play/stop and position when supplied. Offline rendering follows incoming reference audio even if the host's live transport flag is stopped. Hosts without transport information use input activity alone. **CLIP** retains continuous loaded-file generation; **LOAD CLIP** selects it automatically. Clean/removed-noise processing and bypass retain their main-input routing.
 
 The sidechain learns causally as audio arrives, rather than reading the other track's future timeline. Speech detection uses a short look-ahead on the analysis worker and can still misclassify material; audition the generated bed. Synthesis matches a statistical texture, not recognizable events or spoken words. **PRINT WAV** can export the current sidechain model as a 60-second seamless loop. Standalone uses loaded clips rather than DAW sidechain routing.
+
+For continuous backgrounds across edits, switch **FOLLOW → BRIDGE** and adjust **GAP TIME** (0.05–2 seconds, default 0.75). A gap shorter than that setting keeps the previous clip's ambience when reference audio is visible ahead. The next clip's learned profile takes over at its buffered timeline position with a smooth spectral transition. Longer gaps and the end of the supplied audio fade to silence; the bed does not start early before the first clip or re-enter early after a longer gap. HOLD preserves its fixed texture while using the same gap decisions.
+
+BRIDGE buffers two seconds and reports that additional latency to the DAW for compensation. The gap slider changes the bridging distance without changing latency. Disabling BRIDGE restores normal latency; hosts may resynchronize when it changes. This checks only the selected future window in received audio, not the entire DAW arrangement. A new profile still needs sufficiently quiet reference material. Input metering shows the incoming sidechain, which leads the buffered output while lookahead is enabled.
 
 ## Removed-noise monitoring
 
@@ -103,7 +108,7 @@ The build copies the required runtime DLLs alongside both formats. See [BUILDING
 
 ## Verification and limits
 
-Release verification covers engine timing/bypass/stereo checks at 44.1, 48, and 96 kHz, stitched-background scans, real VST3 sidechain routing and synthesis, saved-model restoration, delayed worker cleanup, and the standalone file workflow. An independent visual critic reviewed the native skins, VFD update progress and reference switch. See the [1.7.0 release notes](docs/Release-1.7.0.md); native reports are included in release packages. The reported Studio Pro freeze has not been reproduced in that DAW, and physical audio devices have not been certified by these tests.
+Release verification covers engine timing/bypass/stereo checks at 44.1, 48, and 96 kHz, stitched-background scans, real VST3 sidechain routing/transport/silence/seek behavior, lookahead gap limits and profile timing, saved-model restoration, delayed worker cleanup, and the standalone file workflow. An independent visual critic reviewed the native skins, VFD update progress, reference switch and gap controls. See the [1.8.0 release notes](docs/Release-1.8.0.md); native reports are included in release packages. The reported Studio Pro freeze has not been reproduced in that DAW, and physical audio devices have not been certified by these tests.
 
 Reported latency is 2048 samples at 44.1/48 kHz and 4096 samples at 96 kHz; standalone file export compensates this delay. This processor targets dialogue with persistent background noise. Strong wind impacts, clipping, and overlapping voices may remain. Large reduction settings can soften speech, so audition the result.
 

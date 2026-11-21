@@ -2,8 +2,9 @@
 #include "Offline.h"
 #include "TapeReaderSource.h"
 #include "ReferenceLearner.h"
+#include "ReferenceBridge.h"
 
-class NoiseBaseProcessor final : public juce::AudioProcessor {
+class NoiseBaseProcessor final : public juce::AudioProcessor,private juce::AsyncUpdater,private juce::AudioProcessorValueTreeState::Listener {
 public:
     NoiseBaseProcessor();
     ~NoiseBaseProcessor() override;
@@ -19,7 +20,13 @@ public:
     const juce::String getName() const override {return "NoiseBase";}
     bool acceptsMidi() const override {return false;}
     bool producesMidi() const override {return false;}
-    double getTailLengthSeconds() const override {return proceduralSelected()?std::numeric_limits<double>::infinity():.15;}
+    double getTailLengthSeconds() const override {
+        if(proceduralSelected()&&!externalReferenceSelected())return std::numeric_limits<double>::infinity();
+        int delay=bridgeLatencySamples.load();
+        // Include buffered activity, its fade and a guard for block-sized edges.
+        return delay>0?.25+(delay+bridgeBaseLatency.load())/bridgeSampleRate.load():.15;
+    }
+    int bridgeDelaySamples() const{return bridgeLatencySamples.load();}
     int getNumPrograms() override {return 1;}
     int getCurrentProgram() override {return 0;}
     void setCurrentProgram(int) override {}
@@ -52,6 +59,9 @@ public:
     std::atomic<bool> detectorFailed{false};
     std::atomic<bool> ambienceReady{false};
     std::atomic<bool> referenceConnected{false},referenceFailed{false};
+    std::atomic<bool> referenceSignal{false},referenceTransportKnown{false},referenceTransportRunning{true};
+    std::atomic<double> hostPositionSeconds{-1};
+    std::atomic<bool> referenceBridging{false},referenceOutputActive{false};
     std::atomic<int> noiseRegionCount{0},activeNoiseRegion{0};
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout layout();
@@ -60,6 +70,11 @@ private:
     void queueProfile(const NoiseProfile&,bool external=false);
     NoiseProfile snapshotReference() const;
     void processAudio(juce::AudioBuffer<float>&,bool forceBypass);
+    void parameterChanged(const juce::String&,float) override {triggerAsyncUpdate();}
+    void handleAsyncUpdate() override {refreshBridgeLatency();}
+    void refreshBridgeLatency();
+    void resetBridgeTiming();
+    void applyBridgeProfiles(int64_t outputPosition);
     DenoiseEngine engine;
     ProceduralNoise generator;
     juce::SmoothedValue<float> proceduralFade,ambienceGain;
@@ -69,8 +84,21 @@ private:
     NoiseProfile activeReferenceProfile;
     mutable juce::SpinLock activeReferenceLock;
     std::atomic<bool> referenceSnapshotValid{false};
+    std::atomic<bool> referenceFallbackAllowed{false};
     bool referenceSnapshotDirty=false;
+    bool wasReferenceActive=false,referenceHaveExpectedPosition=false;
+    int64_t referenceExpectedPosition=0;
     uint64_t externalVersion=0;
+    struct ProfileEvent {NoiseProfile profile;int64_t position=0;};
+    std::array<ProfileEvent,16> bridgeProfiles;
+    int bridgeProfileHead=0,bridgeProfileCount=0,processedBridgeDelay=0;
+    NoiseProfile incomingReferenceProfile;
+    ReferenceBridge bridge;
+    std::atomic<int> bridgeLatencySamples{0};
+    std::atomic<double> bridgeSampleRate{48000};
+    std::atomic<int> bridgeBaseLatency{2048};
+    std::atomic<bool> preparingAudio{false};
+    bool wasTransportRunning=true;
     ReferenceLearner reference;
     std::atomic<bool> referenceResetRequested{false};
     mutable juce::CriticalSection profileStateLock;

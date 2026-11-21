@@ -166,7 +166,8 @@ juce::var validatePlugin(const juce::File& file,const juce::File& snapshot,const
         plugin->releaseResources();
     }
     stage("live input rates passed");
-    if(!verifyHostedReference(*plugin,*report))throw std::runtime_error("VST3 external-reference routing or synthesis failed.");
+    if(!verifyHostedReference(*plugin,*report)){report->setProperty("passed",false);report->setProperty("error","VST3 external-reference routing or synthesis failed.");return juce::var(report);}
+    if(!verifyHostedBridge(*plugin,*report)){report->setProperty("passed",false);report->setProperty("error","VST3 gap lookahead, transition or latency verification failed.");return juce::var(report);}
     plugin->setStateInformation(saved.getData(),(int)saved.getSize());
     // Load a self-contained learned model through the real VST3 component state.
     // This exercises the JUCE host wrapper as well as the processor callback.
@@ -428,6 +429,8 @@ public:
                     processor.params.getParameter("noiseOnly")->setValueNotifyingHost(args.contains("--noise-only")||args.contains("--procedural")?1:0);
                     processor.params.getParameter("procedural")->setValueNotifyingHost(args.contains("--procedural")?1:0);
                     processor.params.getParameter("externalReference")->setValueNotifyingHost(args.contains("--sidechain")?1:0);
+                    processor.params.getParameter("bridgeGaps")->setValueNotifyingHost(args.contains("--bridge")?1:0);
+                    if(args.contains("--reference-preview")){processor.inputLevel.store(.03f);processor.referenceConnected.store(true);processor.referenceSignal.store(false);processor.referenceTransportKnown.store(true);processor.referenceTransportRunning.store(true);processor.hostPositionSeconds.store(42.3);processor.referenceOutputActive.store(true);processor.referenceBridging.store(true);processor.ambienceReady.store(true);}
                     NoiseBaseEditor editor(processor);
                     if(!option("--update-progress").isEmpty()){
                         double progress=option("--update-progress").getDoubleValue();auto phase=option("--update-phase").isEmpty()?juce::String("DOWNLOADING"):option("--update-phase");

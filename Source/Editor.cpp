@@ -26,10 +26,17 @@ void HardwareLook::drawToggleButton(juce::Graphics& g,juce::ToggleButton& b,bool
     auto r=b.getLocalBounds().toFloat();auto art=r.removeFromLeft(43).reduced(5,0);
     g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
     g.drawImage(RasterAssets::get().switches[b.getToggleState()?0:1],art,juce::RectanglePlacement::stretchToFit);
-    bool automatic=b.getButtonText().contains("AUTO"),noise=b.getButtonText()=="NOISE BASE",procedural=b.getButtonText()=="PROCEDURAL",reference=b.getButtonText()=="REFERENCE";g.setFont(labelFont(10));
+    bool automatic=b.getButtonText().contains("AUTO"),noise=b.getButtonText()=="NOISE BASE",procedural=b.getButtonText()=="PROCEDURAL",reference=b.getButtonText()=="REFERENCE",bridge=b.getButtonText()=="GAP BRIDGE";g.setFont(labelFont(10));
     auto text=r.reduced(4,1);auto top=text.removeFromTop(15);
-    g.setColour(ink().withAlpha(b.getToggleState()?1.0f:.40f));g.drawText(automatic?"AUTO":noise?"NOISE BASE":procedural?"PROCEDURAL":reference?"SIDECHAIN":"BYPASS",top,juce::Justification::centredLeft);
-    g.setColour(ink().withAlpha(b.getToggleState()?.40f:1.0f));g.drawText(automatic?"HOLD":noise?"CLEAN":procedural?"REMOVED":reference?"CLIP":"IN",text,juce::Justification::centredLeft);
+    g.setColour(ink().withAlpha(b.getToggleState()?1.0f:.40f));g.drawText(automatic?"AUTO":noise?"NOISE BASE":procedural?"PROCEDURAL":reference?"SIDECHAIN":bridge?"BRIDGE":"BYPASS",top,juce::Justification::centredLeft);
+    g.setColour(ink().withAlpha(b.getToggleState()?.40f:1.0f));g.drawText(automatic?"HOLD":noise?"CLEAN":procedural?"REMOVED":reference?"CLIP":bridge?"FOLLOW":"IN",text,juce::Justification::centredLeft);
+}
+void HardwareLook::drawLinearSlider(juce::Graphics& g,int x,int y,int w,int h,float position,float,float,juce::Slider::SliderStyle,juce::Slider& slider){
+    g.setOpacity(slider.isEnabled()?1.0f:.4f);float cy=y+h*.5f;
+    g.setColour(ink().withAlpha(.7f));g.drawLine((float)x,cy,(float)(x+w),cy,3);
+    g.setColour(juce::Colours::black.withAlpha(.35f));g.drawLine((float)x,cy+2,(float)(x+w),cy+2,1);
+    for(int i=0;i<=4;++i){float mark=x+w*i*.25f;g.setColour(ink().withAlpha(.6f));g.drawLine(mark,cy-8,mark,cy-5,1);}
+    g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);g.drawImage(RasterAssets::get().knob,{position-9,cy-9,18,18},juce::RectanglePlacement::stretchToFit);g.setOpacity(1);
 }
 void HardwareLook::drawButtonBackground(juce::Graphics& g,juce::Button& b,const juce::Colour&,bool,bool down) {
     auto r=b.getLocalBounds().toFloat().reduced(1);
@@ -68,7 +75,14 @@ NoiseBaseEditor::NoiseBaseEditor(NoiseBaseProcessor& p):AudioProcessorEditor(p),
     noiseAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(p.params,"noiseOnly",noiseOnly);
     proceduralAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(p.params,"procedural",procedural);
     if(!processor.standaloneMode.load()){addAndMakeVisible(reference);referenceAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(p.params,"externalReference",reference);}
-    reference.setTooltip("SIDECHAIN learns ambience from another DAW track. Select NOISE BASE + PROCEDURAL to generate it here; HOLD freezes the reference. CLIP uses LOAD CLIP instead.");
+    if(!processor.standaloneMode.load()){
+        addAndMakeVisible(gapBridge);addAndMakeVisible(gapTime);gapTime.setSliderStyle(juce::Slider::LinearHorizontal);gapTime.setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);
+        bridgeAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(p.params,"bridgeGaps",gapBridge);
+        sliders.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(p.params,"bridgeTime",gapTime));
+        gapBridge.setTooltip("BRIDGE checks buffered reference audio ahead and carries the previous noise across short gaps. Adds 2 seconds of lookahead, reported to the DAW. FOLLOW waits for actual sidechain input.");
+        gapTime.setTooltip("Maximum gap to bridge: 0.05 to 2 seconds. Longer gaps and the end of the supplied audio fade to silence. Adjusting this slider does not change latency.");
+    }
+    reference.setTooltip("SIDECHAIN follows DAW playback and incoming reference audio. Select NOISE BASE + PROCEDURAL; HOLD freezes the texture while playback still follows the source. CLIP uses LOAD CLIP instead.");
     noiseOnly.setTooltip("Select noise-base output or cleaned recording. Bypass restores the original.");
     procedural.setTooltip("PROCEDURAL generates continuous fresh ambience from the selected clip or sidechain reference. REMOVED monitors the denoiser residual, which can include speech.");
     reset.onClick=[this]{processor.learnTrack();};
@@ -149,7 +163,7 @@ void NoiseBaseEditor::paint(juce::Graphics& g) {
     if(processor.detectorFailed.load())live="DETECTOR UNAVAILABLE  /  restore the runtime files";
     bool standalone=processor.standaloneMode.load();
     bool generated=processor.proceduralSelected();
-    juce::String routing=bypass.getToggleState()?"ORIGINAL / BYPASS":noiseOnly.getToggleState()?(generated?"INFINITE NOISE":"REMOVED NOISE"):"CLEAN";
+    juce::String routing=bypass.getToggleState()?"ORIGINAL / BYPASS":noiseOnly.getToggleState()?(generated?(processor.externalReferenceSelected()?"SIDECHAIN BED":"INFINITE NOISE"):"REMOVED NOISE"):"CLEAN";
     if(generated)live=processor.ambienceReady.load()?"PROFILE READY / GENERATING FRESH AMBIENCE":"LOAD CLIP / NEED AT LEAST 0.35S OF QUIET BACKGROUND";
     drawVfdHousing(g,{64,485,832,92});
     juce::String controls=juce::StringArray{"IVORY","GRAPHITE","WALNUT"}[look.skin]+"  RED "+juce::String(reduction.getValue(),1)+" DB  VOICE "+juce::String(preserve.getValue(),1)+"%  MIX "+juce::String(mix.getValue(),1)+"%  OUT "+(output.getValue()>=0?"+":"")+juce::String(output.getValue(),1)+" DB";
@@ -160,8 +174,13 @@ void NoiseBaseEditor::paint(juce::Graphics& g) {
         else if(standalone&&(processor.fileMode.load()||processor.ambienceReady.load()))live=(processor.isPlaying()?"PLAY  | ":!generated&&processor.playbackPosition()>=processor.playbackDuration()-.001?"END   | ":processor.playbackPosition()>0?"PAUSE | ":"STOP  | ")+live+(!generated&&processor.isLooping()?" | LOOP ON":"");
         if(processor.externalReferenceSelected()){
             if(processor.referenceFailed.load())live="REFERENCE DETECTOR UNAVAILABLE";
-            else if(!processor.ambienceReady.load())live=processor.referenceConnected.load()?"LEARNING REFERENCE / PLAY A QUIET PASSAGE":"ENABLE SIDECHAIN / SEND A REFERENCE TRACK";
-            else live=automatic.getToggleState()?(processor.referenceConnected.load()?"FOLLOWING REFERENCE BACKGROUND":"REFERENCE READY / CONTINUING AMBIENCE"):"REFERENCE HELD / CONTINUING AMBIENCE";
+            else if(processor.referenceTransportKnown.load()&&!processor.referenceTransportRunning.load())live="HOST STOPPED / WAITING FOR PLAYBACK";
+            else if(!processor.referenceConnected.load())live="ENABLE SIDECHAIN / SEND A REFERENCE TRACK";
+            else if(processor.bridgeDelaySamples()>0&&processor.referenceBridging.load())live="BRIDGING GAP / NEXT CLIP AHEAD";
+            else if(processor.bridgeDelaySamples()>0&&processor.referenceOutputActive.load())live="FOLLOWING BUFFERED SIDECHAIN";
+            else if(!processor.referenceSignal.load())live="WAITING FOR SIDECHAIN AUDIO";
+            else if(!processor.ambienceReady.load())live="LEARNING REFERENCE / PLAY A QUIET PASSAGE";
+            else live=automatic.getToggleState()?"FOLLOWING SIDECHAIN BACKGROUND":"PROFILE HELD / FOLLOWING PLAYBACK";
         }
         displayLines[0].draw(g,controls,{82,495,796,17},1.65f,false);
         if(updateBusy&&downloadingUpdate){
@@ -171,15 +190,20 @@ void NoiseBaseEditor::paint(juce::Graphics& g) {
             for(int i=0;i<segments;++i){bool lit=progress.first>=0?i<filled:(i-cursor+segments)%segments<6;g.setColour(lit?juce::Colour(0xffa4ffe9):juce::Colour(0xff245849));g.fillRect(295.0f+i*10.1f,522.0f,7.7f,8.0f);}
             displayLines[4].draw(g,progress.first>=0?juce::String((int)(juce::jlimit(0.0,1.0,progress.first)*100))+"%":"...",{803,518,75,17},1.65f,false);
         }else displayLines[1].draw(g,routing+" | "+live,{82,518,796,17});
-        displayLines[2].draw(g,processor.externalReferenceSelected()?"SIDECHAIN REFERENCE / FRESH STATISTICAL AMBIENCE":processor.fileMode.load()||processor.ambienceReady.load()?processor.getFileName():"NO CLIP PROFILE LOADED",{82,543,558,17});
+        juce::String referenceText="SIDECHAIN INPUT "+juce::String(juce::Decibels::gainToDecibels(processor.inputLevel.load(),-120.0f),1)+" DBFS";
+        if(gapBridge.getToggleState())referenceText+=" | GAP "+juce::String(gapTime.getValue(),2)+" S";
+        displayLines[2].draw(g,processor.externalReferenceSelected()?referenceText:processor.fileMode.load()||processor.ambienceReady.load()?processor.getFileName():"NO CLIP PROFILE LOADED",{82,543,558,17});
         auto time=[](double value){int seconds=(int)std::max(0.0,value);return juce::String(seconds/60).paddedLeft('0',2)+":"+juce::String(seconds%60).paddedLeft('0',2);};
-        displayLines[3].draw(g,standalone?(generated?time(processor.playbackPosition())+" / INF":time(processor.playbackPosition())+" / "+time(processor.playbackDuration())):"HOST CLOCK",{683,543,195,17},1.65f,false);
+        double hostTime=processor.hostPositionSeconds.load();
+        juce::String hostClock=processor.externalReferenceSelected()&&hostTime>=0?(processor.referenceTransportRunning.load()?"PLAY ":"STOP ")+time(hostTime):"HOST CLOCK";
+        displayLines[3].draw(g,standalone?(generated?time(processor.playbackPosition())+" / INF":time(processor.playbackPosition())+" / "+time(processor.playbackDuration())):hostClock,{683,543,195,17},1.65f,false);
     }
-    if(!standalone)engraved(g,"HOST PLAYBACK  /  INFINITE PROFILE GENERATOR",{292,598,260,28},look.ink(),10);
+    if(!standalone)engraved(g,"GAP TIME / S",{434,581,120,13},look.ink(),9);
 }
 void NoiseBaseEditor::resized() {
     skin.setBounds(85,37,74,63);
     reference.setBounds(760,51,136,34);
+    gapBridge.setBounds(302,596,126,32);gapTime.setBounds(438,597,112,30);
     for(int i=0;i<4;++i){juce::Slider* controls[]{&reduction,&preserve,&mix,&output};controls[i]->setBounds(78+i*222,337,138,122);}
     automatic.setBounds(68,270,145,32);reset.setBounds(224,274,82,25);noiseOnly.setBounds(330,270,165,32);procedural.setBounds(520,270,180,32);bypass.setBounds(750,270,140,32);
     load.setBounds(72,596,118,32);scan.setBounds(198,596,80,32);save.setBounds(566,596,118,32);
@@ -196,6 +220,7 @@ void NoiseBaseEditor::timerCallback() {
     inputNeedle=.78f*inputNeedle+.22f*processor.inputLevel.load();outputNeedle=.78f*outputNeedle+.22f*processor.outputLevel.load();reductionNeedle=.78f*reductionNeedle+.22f*processor.reductionLevel.load();
     bool busy=processor.busy.load(),generated=processor.proceduralSelected()&&!bypass.getToggleState(),external=processor.externalReferenceSelected();load.setEnabled(!busy);scan.setEnabled(!busy&&!external&&processor.fileMode.load());save.setEnabled(!busy&&(generated?processor.ambienceReady.load():processor.analysed.load()));
     reduction.setEnabled(!generated);preserve.setEnabled(!generated);automatic.setEnabled(!generated||external);reset.setEnabled(!busy&&(external||!generated||processor.fileMode.load()));reference.setEnabled(!busy);
+    gapBridge.setEnabled(!busy&&external&&generated);gapTime.setEnabled(!busy&&external&&generated&&gapBridge.getToggleState());
     for(auto* button:{&play,&stop,&beginning})button->setEnabled(generated?processor.ambienceReady.load():processor.fileMode.load());
     loop.setEnabled(!generated&&processor.fileMode.load());
     auto transportId=processor.isPlaying()?"transport-pause":"transport-play";

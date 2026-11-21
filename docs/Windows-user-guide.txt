@@ -1,4 +1,4 @@
-NOISEBASE 1.7.0 - WINDOWS x64
+NOISEBASE 1.8.0 - WINDOWS x64
 Automatic dialogue denoising, with an analog hardware-style interface.
 
 IN THIS PACKAGE
@@ -109,10 +109,27 @@ learns spectrum, stereo balance/correlation and gentle variation. AUTO follows
 stable changes; HOLD freezes the active texture. LEARN clears that reference
 and starts again. The main input remains the source for CLEAN/REMOVED and bypass.
 
-A stopped or digitally silent reference leaves the last usable profile intact.
-Its compact model and the reference switch are saved in DAW state; restoration
-can generate without that track. Procedural mode reports an infinite tail, but
-the DAW must keep processing the effect; disable suspension if necessary.
+A stopped host, disconnected sidechain or digitally silent reference fades the
+bed out. It resumes with reference audio during playback. HOLD freezes texture,
+not playback. AUTO seeks/loop wraps discard old-location analysis and wait for
+new quiet background; HOLD retains its profile across jumps. The model/source
+switch are saved with DAW state, but restored output also waits for reference.
+The input meter/VFD dBFS value show the sidechain; the VFD shows host play/stop
+and position when available. Offline rendering follows reference input despite
+a stopped live-transport flag. Hosts without transport data use input activity.
+Sidechain mode reports a short release tail; CLIP mode remains continuous.
+For ambience across edits, select BRIDGE and set GAP TIME from 0.05 to 2 seconds
+(default 0.75). It checks buffered reference ahead. Shorter gaps keep the previous
+noise until the next clip's learned background takes over with a smooth transition.
+Longer gaps and the end of supplied audio fade out. The bed does not begin before
+the first clip or re-enter early in a longer gap. HOLD keeps the same texture.
+
+BRIDGE adds two seconds of latency, reported to the DAW for timing compensation.
+The gap slider does not change that latency; disabling BRIDGE restores normal
+latency. The host may resynchronize when this option changes. Only the selected
+future window is checked, not the complete DAW arrangement. The input meter is
+the incoming reference and leads buffered output. New profiles still need quiet
+background. All buffers/profile history are bounded and preallocated for playback.
 PRINT WAV exports the active model, defaulting to a 60-second seamless loop.
 CLIP returns to a loaded file; LOAD CLIP also selects that reference source.
 
@@ -162,6 +179,8 @@ CONTROLS
   AUTO / HOLD     Adapt from non-speech, or freeze the current noise floor.
   LEARN           Re-analyze the whole loaded file, or reset incoming learning.
   REFERENCE       VST3 procedural source: SIDECHAIN or loaded CLIP.
+  BRIDGE/FOLLOW   Bridge short sidechain gaps with compensated lookahead, or follow input.
+  GAP TIME        Maximum gap to bridge, 0.05-2 seconds. Current value is in the VFD.
   BYPASS / IN     Switch between unchanged and processed audio.
   FACEPLATE       Three-position skin selector. No change to audio character.
 

@@ -10,6 +10,7 @@ struct HardwareLook final : juce::LookAndFeel_V4 {
     juce::Colour ink() const;
     juce::Colour accent() const;
     void drawRotarySlider(juce::Graphics&,int,int,int,int,float,float,float,juce::Slider&) override;
+    void drawLinearSlider(juce::Graphics&,int,int,int,int,float,float,float,juce::Slider::SliderStyle,juce::Slider&) override;
     void drawToggleButton(juce::Graphics&,juce::ToggleButton&,bool,bool) override;
     void drawButtonBackground(juce::Graphics&,juce::Button&,const juce::Colour&,bool,bool) override;
     void drawButtonText(juce::Graphics&,juce::TextButton&,bool,bool) override;
@@ -36,14 +37,14 @@ private:
     void chooseExportFile(double seconds);
     NoiseBaseProcessor& processor;
     HardwareLook look;
-    juce::Slider reduction,preserve,mix,output,skin;
-    juce::ToggleButton automatic{"AUTO LEARN"},bypass{"BYPASS"},noiseOnly{"NOISE BASE"},procedural{"PROCEDURAL"},reference{"REFERENCE"};
+    juce::Slider reduction,preserve,mix,output,skin,gapTime;
+    juce::ToggleButton automatic{"AUTO LEARN"},bypass{"BYPASS"},noiseOnly{"NOISE BASE"},procedural{"PROCEDURAL"},reference{"REFERENCE"},gapBridge{"GAP BRIDGE"};
     juce::TextButton reset{"LEARN"},load{"LOAD TAPE"},scan{"SCAN"},play,stop,loop,beginning,save{"PRINT WAV"},devices{"PATCH BAY"};
     juce::TextButton updates{"UPDATES"};
     std::array<VfdLine,5> displayLines;
     bool updateBusy=false,downloadingUpdate=false;
     std::vector<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>> sliders;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> autoAttachment,bypassAttachment,noiseAttachment,proceduralAttachment,referenceAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> autoAttachment,bypassAttachment,noiseAttachment,proceduralAttachment,referenceAttachment,bridgeAttachment;
     std::unique_ptr<juce::FileChooser> chooser;
     float inputNeedle=0,outputNeedle=0,reductionNeedle=0;
 };

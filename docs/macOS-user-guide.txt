@@ -55,9 +55,23 @@ AUTO follows background changes, HOLD freezes the texture, and LEARN resets it.
 The reference is analyzed on a worker; it is never mixed directly into output.
 The main input remains the source for CLEAN/REMOVED and bypass.
 
-Generation continues from the last profile when the reference stops/goes silent,
-and the active model is saved with DAW state. Procedural mode reports an infinite
-tail; host suspension can still stop processing. PRINT WAV can export the active
+Generation follows host playback and reference activity. Stop, a disconnected
+send or digital silence fades output out; incoming reference during playback
+resumes it. HOLD freezes texture while following input/transport. AUTO seeks or
+loop wraps discard old-location analysis and wait for fresh quiet background;
+HOLD keeps its model. Saved state retains the model, but also waits for reference.
+The input meter/numeric VFD level show the sidechain; host position/play/stop
+appear when supplied. Offline rendering follows actual reference input, and
+hosts without transport information use input activity. CLIP remains continuous.
+Select BRIDGE to keep the preceding background through short gaps when another
+clip is visible ahead. GAP TIME sets the maximum gap (0.05-2 seconds, default
+0.75). The next profile transitions at that clip's buffered position; longer
+gaps and the end of supplied audio fade out. HOLD keeps its fixed texture.
+BRIDGE adds two seconds of latency reported to the DAW for compensation; the
+gap slider does not change latency. Disable BRIDGE to restore normal latency.
+Only the selected future window is examined. The input meter leads buffered
+output, and new profiles still need confidently quiet reference material.
+PRINT WAV can export the active
 sidechain model as a 60-second seamless loop. CLIP selects the loaded-file source;
 LOAD CLIP switches to it automatically. The standalone uses loaded clips.
 Learning is causal, speech detection can misclassify audio, and synthesis creates

@@ -15,13 +15,15 @@ public:
     bool setProfile(const NoiseProfile&); // preallocated; safe on the audio thread
     void next(float* channels);
     bool ready() const {return hasProfile;}
-    void clearProfile(){for(auto& values:target)std::fill(values.begin(),values.end(),0);hasProfile=false;}
+    void setSlewSeconds(float seconds){slewSeconds=seconds;}
+    void clearProfile(bool discardHistory=false){for(auto& values:target)std::fill(values.begin(),values.end(),0);hasProfile=false;
+        if(discardHistory){for(auto& values:power)std::fill(values.begin(),values.end(),0);for(auto& values:overlap)std::fill(values.begin(),values.end(),0);countdown=0;position=0;modulation.fill(0);}}
 private:
     void frame();
     double rate=48000;
     int size=2048,hop=512,channels=2,position=0,countdown=0,capacity=8192;
     bool hasProfile=false;
-    float variation=0;
+    float variation=0,slewSeconds=.15f;
     std::unique_ptr<juce::dsp::FFT> fft;
     std::vector<float> window,correlation;
     std::array<std::vector<float>,2> target,power,data,overlap;

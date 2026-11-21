@@ -52,7 +52,7 @@ void ProceduralNoise::frame(){
     // Eight broad bands drift over several seconds, with a bounded learned depth.
     for(size_t band=0;band<modulation.size();++band){float alpha=(float)std::exp(-hop/(rate*(2.0+band*.7)));modulation[band]=alpha*modulation[band]+std::sqrt(1-alpha*alpha)*gaussian(random);}
     for(auto& values:data)std::fill(values.begin(),values.end(),0);
-    float slew=(float)(1-std::exp(-hop/(rate*.15)));
+    float slew=(float)(1-std::exp(-hop/(rate*slewSeconds)));
     for(int k=1;k<=size/2;++k){
         float band=juce::jlimit(0.0f,7.0f,(float)(std::log2(std::max(30.0,k*rate/size)/30.0)*.72));int a=(int)band,b=std::min(a+1,7);float movement=modulation[(size_t)a]+(band-a)*(modulation[(size_t)b]-modulation[(size_t)a]);
         float level=juce::Decibels::decibelsToGain(juce::jlimit(-6.0f,6.0f,movement*variation));
