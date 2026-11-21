@@ -207,7 +207,7 @@ void NoiseBaseProcessor::processAudio(juce::AudioBuffer<float>& hostBuffer,bool 
     bool bypassed=forceBypass||value("bypass")>.5f,procedural=proceduralSelected();
     bool mainActive=!standaloneMode.load()&&!procedural&&!bypassed&&transportRunning&&buffer.getMagnitude(0,buffer.getNumSamples())>1e-6f;
     if(mainActive&&(!wasMainActive||mainJump)){mainSegmentStart=havePosition?projectTime:std::numeric_limits<double>::quiet_NaN();mainCacheId=0;}
-    if(mainActive&&havePosition&&value("auto")>.5f&&mainCache.recall(projectTime,mainCacheId,cachedMainProfile)==ProfileCache::found){engine.setProfile(cachedMainProfile,true);++mainCacheHits;}
+    if(mainActive&&havePosition&&value("auto")>.5f&&mainCache.recall(projectTime,mainCacheId,cachedMainProfile)==ProfileCache::found){engine.setProfile(cachedMainProfile,true);lastMainQuiet=engine.quietTime();cacheCaptureCountdown=0;++mainCacheHits;}
     wasMainActive=mainActive;
     if(!knownSpeech&&!procedural&&!bypassed){if(!voiceActive)voice.resetHistory();voiceActive=true;voice.push(buffer);speech=voice.probability();}else voiceActive=false;
     engine.process(buffer,speech,value("reduction"),value("preserve")*.01f,
