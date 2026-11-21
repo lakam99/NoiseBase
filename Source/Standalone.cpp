@@ -450,6 +450,11 @@ public:
                         processor.setStateInformation(saved.getData(),(int)saved.getSize());processor.prepareToPlay(48000,512);
                         processor.params.getParameter("externalReference")->setValueNotifyingHost(args.contains("--sidechain")?1:0);processor.params.getParameter("noiseOnly")->setValueNotifyingHost(args.contains("--sidechain")?1:0);processor.params.getParameter("skin")->setValueNotifyingHost(skin*.5f);
                     }
+                    if(args.contains("--meter-silence-preview")){
+                        processor.params.getParameter("reduction")->setValueNotifyingHost(1);
+                        processor.prepareToPlay(48000,512);juce::AudioBuffer<float> silence(2,512);juce::MidiBuffer midi;
+                        for(int block=0;block<96;++block){silence.clear();processor.processBlock(silence,midi);}
+                    }
                     NoiseBaseEditor editor(processor);
                     if(!option("--update-progress").isEmpty()){
                         double progress=option("--update-progress").getDoubleValue();auto phase=option("--update-phase").isEmpty()?juce::String("DOWNLOADING"):option("--update-phase");
@@ -459,7 +464,7 @@ public:
                     juce::MessageManager::getInstance()->runDispatchLoopUntil(60);
                     auto image=editor.createComponentSnapshot(editor.getLocalBounds(),true,1.0f);
                     writeSnapshot(juce::File(option("--render-ui")),image);
-                    auto* result=new juce::DynamicObject;result->setProperty("passed",true);result->setProperty("skin",skin);report=juce::var(result);
+                    auto* result=new juce::DynamicObject;result->setProperty("passed",!args.contains("--meter-silence-preview")||processor.reductionLevel.load()==0);result->setProperty("skin",skin);result->setProperty("reduction_meter_db",processor.reductionLevel.load());report=juce::var(result);
                 } else report=validatePlugin(juce::File(option(args.contains("--restore-cached-plugin")?"--restore-cached-plugin":"--validate-plugin")),option("--snapshot").isEmpty()?juce::File{}:juce::File(option("--snapshot")),option("--input").isEmpty()?juce::File{}:juce::File(option("--input")),option("--render-audio").isEmpty()?juce::File{}:juce::File(option("--render-audio")),option("--cache-state").isEmpty()?juce::File{}:juce::File(option("--cache-state")),args.contains("--restore-cached-plugin"));
                 if(!option("--report").isEmpty())juce::File(option("--report")).replaceWithText(juce::JSON::toString(report,true));
                 if(report.hasProperty("passed") && !(bool)report["passed"])setApplicationReturnValue(2);

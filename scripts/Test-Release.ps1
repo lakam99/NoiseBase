@@ -19,6 +19,7 @@ Invoke-Check @('--render-ui',(Join-Path $folder 'sidechain-vst3.png'),'--plugin-
 Invoke-Check @('--render-ui',(Join-Path $folder 'gap-bridge-vst3.png'),'--plugin-layout','--procedural','--sidechain','--bridge','--reference-preview','--skin','2') (Join-Path $folder 'gap-bridge-vst3.json')
 Invoke-Check @('--validate-plugin',$plugin,'--snapshot',(Join-Path $Build 'host-wrapper.png'),'--cache-state',(Join-Path $folder 'session-cache.bin')) (Join-Path $folder 'vst3.json')
 Invoke-Check @('--restore-cached-plugin',$plugin,'--cache-state',(Join-Path $folder 'session-cache.bin')) (Join-Path $folder 'cache-cold-start.json')
+Invoke-Check @('--render-ui',(Join-Path $folder 'reduction-meter-silence.png'),'--plugin-layout','--cache-state',(Join-Path $folder 'session-cache.bin'),'--meter-silence-preview') (Join-Path $folder 'reduction-meter-silence.json')
 Invoke-Check @('--restore-cached-plugin',$plugin,'--cache-state',(Join-Path $folder 'session-cache-bridge.bin')) (Join-Path $folder 'cache-cold-start-bridge.json')
 Invoke-Check @('--render-ui',(Join-Path $folder 'cache-restored-vst3.png'),'--plugin-layout','--cache-state',(Join-Path $folder 'session-cache.bin'),'--skin','2') (Join-Path $folder 'cache-restored-ui.json')
 $fixture=Join-Path $Build 'fixture.wav'

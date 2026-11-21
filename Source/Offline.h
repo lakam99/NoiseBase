@@ -19,6 +19,7 @@ FileAnalysis analyseRecording(const juce::File&,std::atomic<float>* progress=nul
 void exportRecording(const FileAnalysis&,const juce::File& output,float reduction,float preserve,
                      float mix,float outputDb,std::atomic<float>* progress=nullptr,std::atomic<bool>* cancel=nullptr,bool noiseOnly=false,bool followTrack=true,uint64_t* rustleFrames=nullptr);
 juce::var runEngineTests();
+juce::var runReductionMeterTests();
 juce::var runNoiseOutputTests();
 void exportAmbience(const NoiseProfile&,const juce::File&,double seconds,float mix,float outputDb,std::atomic<float>* progress=nullptr,std::atomic<bool>* cancel=nullptr,uint64_t seed=0);
 juce::var runProceduralTests();

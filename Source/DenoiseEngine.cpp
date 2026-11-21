@@ -112,13 +112,11 @@ void DenoiseEngine::frame(float speech, float cap, float preserve, bool learn) {
         priorClean[k]=posterior*g*g;
         frequencyScratch[k]=g;
     }
-    double averageGain=0;
     for(size_t k=0;k<gain.size();++k) {
         size_t a=k==0?0:k-1,b=std::min(k+1,gain.size()-1);
         float smooth=.25f*frequencyScratch[a]+.5f*frequencyScratch[k]+.25f*frequencyScratch[b];
-        gain[k]=.28f*priorGain[k]+.72f*smooth; priorGain[k]=gain[k];averageGain+=gain[k]*(1-(1-target)*rustle.removableWeight((int)k,preserve));
+        gain[k]=.28f*priorGain[k]+.72f*smooth; priorGain[k]=gain[k];
     }
-    meterReduction=.9f*meterReduction+.1f*juce::jmax(0.0f,-juce::Decibels::gainToDecibels((float)(averageGain/gain.size()),-60.0f));
     for(int c=0;c<channelCount;++c) {
         auto& data=fftData[(size_t)c];
         for(int k=0;k<=size/2;++k) { data[(size_t)k*2]*=gain[(size_t)k]; data[(size_t)k*2+1]*=gain[(size_t)k]; }
@@ -137,6 +135,7 @@ void DenoiseEngine::process(juce::AudioBuffer<float>& buffer,float speech,float 
     bypassSmooth.setTargetValue(bypass?0.0f:1.0f);
     noiseOnlySmooth.setTargetValue(noiseOnly?1.0f:0.0f);
     float peakIn=0,peakOut=0;
+    double dryEnergy=0,cleanEnergy=0;
     for(int s=0;s<buffer.getNumSamples();++s) {
         float mixValue=mixSmooth.getNextValue(),active=bypassSmooth.getNextValue();
         float blend=mixValue*active,listen=noiseOnlySmooth.getNextValue();
@@ -153,6 +152,9 @@ void DenoiseEngine::process(juce::AudioBuffer<float>& buffer,float speech,float 
             float wet=output[(size_t)c][(size_t)outputPos]; output[(size_t)c][(size_t)outputPos]=0;
             wet-=(1-artifactGain)*removableOutput[(size_t)c][(size_t)outputPos];removableOutput[(size_t)c][(size_t)outputPos]=0;
             float clean=dry+(wet-dry)*blend;
+            // Measure the aligned signal before output trim or noise monitoring.
+            // Potential spectral attenuation on empty bins is not audible gain reduction.
+            dryEnergy+=(double)dry*dry;cleanEnergy+=(double)clean*clean;
             // Subtract before output trim, using the same delayed dry reference.
             // Bypass restores the original even when noise-only remains selected.
             float removed=(dry-wet)*mixValue;
@@ -166,4 +168,11 @@ void DenoiseEngine::process(juce::AudioBuffer<float>& buffer,float speech,float 
     }
     float decay=(float)std::exp(-buffer.getNumSamples()/(rate*.25));
     meterInput=std::max(peakIn,meterInput*decay); meterOutput=std::max(peakOut,meterOutput*decay);
+    const double samples=std::max(1,buffer.getNumSamples()*channelCount);
+    if(dryEnergy<=samples*1e-12)meterReduction=0;
+    else {
+        float reduction=juce::jlimit(0.0f,60.0f,(float)(10*std::log10(dryEnergy/std::max(cleanEnergy,1e-30))));
+        float response=(float)(1-std::exp(-buffer.getNumSamples()/(rate*(reduction>meterReduction?.025:.15))));
+        meterReduction+=response*(reduction-meterReduction);
+    }
 }
