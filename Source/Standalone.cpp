@@ -222,15 +222,25 @@ juce::var validatePlugin(const juce::File& file,const juce::File& snapshot,const
         juce::AudioFormatManager formats;formats.registerBasicFormats();
         std::unique_ptr<juce::AudioFormatReader> reader(formats.createReaderFor(input));
         if(!reader || reader->numChannels>2 || reader->lengthInSamples>reader->sampleRate*120)throw std::runtime_error("Use a short mono/stereo validation recording.");
-        for(auto* param:plugin->getParameters())if(auto* named=dynamic_cast<juce::AudioProcessorParameterWithID*>(param)){
-            if(named->paramID=="reduction")param->setValueNotifyingHost(14.0f/24);
-            if(named->paramID=="auto")param->setValueNotifyingHost(1);
-            if(named->paramID=="bypass")param->setValueNotifyingHost(0);
+        // Hosted VST3 parameters do not inherit AudioProcessorParameterWithID.
+        // Set the actual host controls and advance its playhead for file input;
+        // a constant zero position otherwise looks like a seek every block.
+        for(auto* param:plugin->getParameters()){
+            auto name=param->getName(128);
+            if(name=="Reduction")param->setValueNotifyingHost(14.0f/24);
+            else if(name=="Automatic noise learning"||name=="Mix")param->setValueNotifyingHost(1);
+            else if(name=="Bypass"||name=="Noise only"||name=="Procedural noise"||name=="External reference")param->setValueNotifyingHost(0);
+            else if(name=="Output")param->setValueNotifyingHost(.5f);
+            else if(name=="Voice preserve")param->setValueNotifyingHost(.8f);
         }
+        struct FileClock final:juce::AudioPlayHead {int64_t cursor=0;double rate=44100;juce::Optional<PositionInfo> getPosition() const override {PositionInfo p;p.setTimeInSamples(cursor);p.setTimeInSeconds(cursor/rate);p.setIsPlaying(true);return p;}};
+        struct BindClock {juce::AudioProcessor& processor;juce::AudioPlayHead* previous;FileClock clock;explicit BindClock(juce::AudioProcessor& p):processor(p),previous(p.getPlayHead()){processor.setPlayHead(&clock);}~BindClock(){processor.setPlayHead(previous);}} binding(*plugin);
+        binding.clock.rate=reader->sampleRate;
         plugin->setNonRealtime(true);plugin->setRateAndBufferSizeDetails(reader->sampleRate,512);plugin->prepareToPlay(reader->sampleRate,512);
         int latency=plugin->getLatencySamples();int length=(int)reader->lengthInSamples;
         juce::AudioBuffer<float> rendered((int)reader->numChannels,length);rendered.clear();
         for(int pos=0;pos<length+latency;pos+=512) {
+            binding.clock.cursor=pos;
             int count=std::min(512,length+latency-pos);juce::AudioBuffer<float> audio(2,count);audio.clear();
             if(pos<length)reader->read(&audio,0,std::min(count,length-pos),pos,true,true);
             juce::MidiBuffer midi;plugin->processBlock(audio,midi);
@@ -244,6 +254,7 @@ juce::var validatePlugin(const juce::File& file,const juce::File& snapshot,const
             if(!writer || !writer->writeFromAudioSampleBuffer(rendered,0,length))throw std::runtime_error("Could not write the host validation audio.");
         }
         report->setProperty("auto_learning_audio_rendered",true);report->setProperty("audio_samples",length);
+        report->setProperty("render_timeline_advanced",true);report->setProperty("audio_output_route","CLEAN");
         report->setProperty("audio_sample_rate",reader->sampleRate);report->setProperty("offline_host_processing",true);
         plugin->releaseResources();plugin->setNonRealtime(false);
     }
