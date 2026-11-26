@@ -104,10 +104,17 @@ void DenoiseEngine::frame(float speech, float cap, float preserve, bool learn) {
     }
     float actualCap=profileReady ? cap : std::min(cap,6.0f);
     float floor=juce::Decibels::decibelsToGain(-actualCap+std::min(5.0f,actualCap*.4f)*speech*preserve);
+    // During speech, retain the fast instantaneous path for consonants and
+    // attacks. In speech pauses it lets random noise-bin peaks reopen their
+    // own gates, leaving narrow, changing tones. Use a slower decision-directed
+    // prior there instead; the same reduction floor still bounds attenuation.
+    float speechProtection=std::max(juce::jlimit(0.f,1.f,(speech-.05f)/.15f),(float)juce::jlimit(0.0,1.0,speechHangover/.10));
+    float quietMemory=(float)std::exp(-hop/(rate*.50));
+    float priorMemory=quietMemory+(.90f-quietMemory)*speechProtection;
     for(size_t k=0;k<noise.size();++k) {
         float posterior=power[k]/juce::jmax(noise[k],1e-16f);
         float immediate=juce::jmax(posterior-1.0f,0.0f);
-        float prior=juce::jmax(.90f*priorClean[k]+.10f*immediate,.65f*immediate);
+        float prior=juce::jmax(priorMemory*priorClean[k]+(1-priorMemory)*immediate,.65f*speechProtection*immediate);
         float g=juce::jlimit(floor,1.0f,prior/(1+prior));
         priorClean[k]=posterior*g*g;
         frequencyScratch[k]=g;

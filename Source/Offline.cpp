@@ -202,6 +202,7 @@ juce::var runEngineTests() {
         row->setProperty("passed",ok); passed &= ok; results.add(juce::var(row));
     }
     auto meterTests=runReductionMeterTests();passed &= (bool)meterTests["passed"];report->setProperty("reduction_meter",meterTests);
+    auto backgroundTests=runBackgroundArtifactTests();passed &= (bool)backgroundTests["passed"];report->setProperty("background_artifacts",backgroundTests);
     auto noiseTests=runNoiseOutputTests();passed &= (bool)noiseTests["passed"];
     auto rustleTests=runRustleTests();passed &= (bool)rustleTests["passed"];report->setProperty("automatic_rustle",rustleTests);
     auto proceduralTests=runProceduralTests();passed &= (bool)proceduralTests["passed"];
